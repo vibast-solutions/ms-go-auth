@@ -59,6 +59,7 @@ Two tables in MySQL database `auth`:
 | POST | /auth/logout | Yes | Invalidates refresh token |
 | POST | /auth/change-password | Yes | Change password (requires old password) |
 | POST | /auth/confirm-account | No | Confirm account with token |
+| POST | /auth/validate-token | No | Validate JWT access token, returns user_id + email (no DB call) |
 | POST | /auth/request-password-reset | No | Get/generate reset token (reuses valid token) |
 | POST | /auth/reset-password | No | Reset password with token |
 
@@ -77,7 +78,7 @@ Additional RPCs: `ValidateToken` (validates JWT, returns user info), `RefreshTok
 - `RESET_TOKEN_TTL` (default: 1 hour)
 
 ## Key Implementation Details
-- Access tokens are JWTs with user_id and email in claims
+- Access tokens are JWTs with user_id and email in claims; validated via signature only (no DB call)
 - Refresh tokens are UUIDs stored in database
 - Token refresh uses rotation: old refresh token is deleted, new pair is issued
 - Confirm token regeneration: returns existing valid token or creates new one; rejects if account already confirmed

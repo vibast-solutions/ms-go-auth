@@ -10,6 +10,7 @@ Authentication microservice providing user registration, login, JWT token manage
 - Confirm token regeneration for unconfirmed accounts
 - Password change and reset flows
 - Password reset token reuse (returns existing token if not expired)
+- Token validation endpoint (HTTP and gRPC) for service-to-service JWT verification
 - Both HTTP (REST) and gRPC interfaces
 - bcrypt password hashing
 
@@ -229,6 +230,32 @@ Request a password reset token. If a valid (non-expired) reset token already exi
 }
 ```
 
+### POST /auth/validate-token
+Validate a JWT access token and get the associated user info. Intended for service-to-service calls. Does not hit the database — only verifies the JWT signature and expiry.
+
+**Request:**
+```json
+{
+  "access_token": "jwt-token"
+}
+```
+
+**Response (200) — valid token:**
+```json
+{
+  "valid": true,
+  "user_id": 1,
+  "email": "user@example.com"
+}
+```
+
+**Response (200) — invalid/expired token:**
+```json
+{
+  "valid": false
+}
+```
+
 ### POST /auth/reset-password
 Reset password using token.
 
@@ -277,6 +304,11 @@ curl -X POST http://localhost:8080/auth/login \
 curl -X POST http://localhost:8080/auth/refresh-token \
   -H "Content-Type: application/json" \
   -d '{"refresh_token":"<refresh-token>"}'
+
+# Validate a token (service-to-service)
+curl -X POST http://localhost:8080/auth/validate-token \
+  -H "Content-Type: application/json" \
+  -d '{"access_token":"<access-token>"}'
 
 # Change password (use access_token from login response)
 curl -X POST http://localhost:8080/auth/change-password \

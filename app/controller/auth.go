@@ -152,6 +152,30 @@ func (c *AuthController) RefreshToken(ctx echo.Context) error {
 	})
 }
 
+func (c *AuthController) ValidateToken(ctx echo.Context) error {
+	var req dto.ValidateTokenRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid request body"})
+	}
+
+	if req.AccessToken == "" {
+		return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "access_token is required"})
+	}
+
+	claims, err := c.authService.ValidateAccessToken(req.AccessToken)
+	if err != nil {
+		return ctx.JSON(http.StatusOK, dto.ValidateTokenResponse{
+			Valid: false,
+		})
+	}
+
+	return ctx.JSON(http.StatusOK, dto.ValidateTokenResponse{
+		Valid:  true,
+		UserID: claims.UserID,
+		Email:  claims.Email,
+	})
+}
+
 func (c *AuthController) ChangePassword(ctx echo.Context) error {
 	var req dto.ChangePasswordRequest
 	if err := ctx.Bind(&req); err != nil {

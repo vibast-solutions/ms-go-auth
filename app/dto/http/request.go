@@ -40,3 +40,7 @@ type RefreshTokenRequest struct {
 type GenerateConfirmTokenRequest struct {
 	Email string `json:"email"`
 }
+
+type ValidateTokenRequest struct {
+	AccessToken string `json:"access_token"`
+}

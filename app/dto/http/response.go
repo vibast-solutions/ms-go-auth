@@ -45,6 +45,12 @@ type RefreshTokenResponse struct {
 	ExpiresIn    int64  `json:"expires_in"`
 }
 
+type ValidateTokenResponse struct {
+	Valid  bool   `json:"valid"`
+	UserID uint64 `json:"user_id,omitempty"`
+	Email  string `json:"email,omitempty"`
+}
+
 type ErrorResponse struct {
 	Error string `json:"error"`
 }

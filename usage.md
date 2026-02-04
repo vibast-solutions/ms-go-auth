@@ -38,7 +38,7 @@ service AuthService {
 
 ### ValidateToken - the key RPC for other services
 
-When your service receives a request with a JWT access token and needs to verify the user's identity, call `ValidateToken`:
+When your service receives a request with a JWT access token and needs to verify the user's identity, call `ValidateToken` (available via both gRPC and HTTP). This only checks the JWT signature and expiry — no database call is made:
 
 ```
 Request:  { access_token: "the-jwt-string" }
@@ -170,6 +170,17 @@ Errors:   400 (missing email)
 
 If the email does not exist, the response is still 200 with `{"message": "if the email exists, a reset token has been generated"}` and no `reset_token` field.
 
+### POST /auth/validate-token
+Validate a JWT access token and get the associated user info. This is the HTTP equivalent of the `ValidateToken` gRPC call. Only checks the JWT signature and expiry — no database call is made. Always returns 200; use the `valid` field to determine the result.
+
+```
+Request:  {"access_token": "jwt-string"}
+Response: {"valid": true, "user_id": 1, "email": "user@example.com"}
+Status:   200 OK (always, even for invalid tokens)
+```
+
+Invalid or expired tokens return `{"valid": false}`.
+
 ### POST /auth/reset-password
 Reset password using a reset token. Invalidates all existing refresh tokens for the user.
 
@@ -193,6 +204,12 @@ Errors:   400 (invalid/expired token, missing fields)
 2. If the access token is expired (401 response), call `POST /auth/refresh-token` with the refresh token to get a new token pair
 3. If the refresh token is also expired (401 response), re-login
 
+### Service-to-service token validation flow
+1. Receive a JWT access token from the caller (e.g., forwarded from the UI)
+2. Call `ValidateToken` via gRPC or `POST /auth/validate-token` via HTTP
+3. If `valid` is `true`, use the returned `user_id` and `email` to identify the caller
+4. If `valid` is `false`, reject the request
+
 ### Password reset flow
 1. `POST /auth/request-password-reset` with email -> get `reset_token`
 2. `POST /auth/reset-password` with token + new password -> done
@@ -212,4 +229,4 @@ The access token is an HS256-signed JWT with this payload:
 }
 ```
 
-Other services should not parse JWTs themselves. Use the `ValidateToken` gRPC call instead, which handles signature verification and expiry checks.
+Other services should not parse JWTs themselves. Use the `ValidateToken` gRPC call or `POST /auth/validate-token` HTTP endpoint instead, which handle signature verification and expiry checks.
