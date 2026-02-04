@@ -6,7 +6,10 @@ Authentication microservice providing user registration, login, JWT token manage
 
 - User registration with email confirmation
 - Login with JWT access and refresh tokens
+- Token refresh with rotation (old refresh token is invalidated)
+- Confirm token regeneration for unconfirmed accounts
 - Password change and reset flows
+- Password reset token reuse (returns existing token if not expired)
 - Both HTTP (REST) and gRPC interfaces
 - bcrypt password hashing
 
@@ -126,6 +129,26 @@ Confirm user account with token from registration.
 }
 ```
 
+### POST /auth/generate-confirm-token
+Get a confirmation token for an unconfirmed account. Returns the existing token if it's still valid, or generates a new one.
+
+**Request:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response (200):**
+```json
+{
+  "confirm_token": "uuid-token",
+  "message": "confirm token generated successfully"
+}
+```
+
+**Errors:** 400 (account already confirmed), 404 (user not found)
+
 ### POST /auth/login
 Authenticate and get tokens.
 
@@ -145,6 +168,27 @@ Authenticate and get tokens.
   "expires_in": 900
 }
 ```
+
+### POST /auth/refresh-token
+Exchange a refresh token for a new access token and refresh token (token rotation). The old refresh token is invalidated.
+
+**Request:**
+```json
+{
+  "refresh_token": "uuid-token"
+}
+```
+
+**Response (200):**
+```json
+{
+  "access_token": "jwt-token",
+  "refresh_token": "new-uuid-token",
+  "expires_in": 900
+}
+```
+
+**Errors:** 400 (missing refresh_token), 401 (invalid or expired refresh token)
 
 ### POST /auth/logout
 Invalidate refresh token. Requires `Authorization: Bearer <access_token>` header.
@@ -168,7 +212,7 @@ Change password. Requires `Authorization: Bearer <access_token>` header.
 ```
 
 ### POST /auth/request-password-reset
-Request a password reset token.
+Request a password reset token. If a valid (non-expired) reset token already exists, it is returned instead of generating a new one.
 
 **Request:**
 ```json
@@ -219,10 +263,20 @@ curl -X POST http://localhost:8080/auth/confirm-account \
   -H "Content-Type: application/json" \
   -d '{"token":"<confirm-token>"}'
 
+# Generate a new confirm token (if token expired)
+curl -X POST http://localhost:8080/auth/generate-confirm-token \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com"}'
+
 # Login
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"password123"}'
+
+# Refresh tokens (use refresh_token from login response)
+curl -X POST http://localhost:8080/auth/refresh-token \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<refresh-token>"}'
 
 # Change password (use access_token from login response)
 curl -X POST http://localhost:8080/auth/change-password \
@@ -245,7 +299,8 @@ auth/
     ├── service/         # Business logic
     ├── repository/      # Database operations
     ├── entity/          # Database models
-    ├── dto/http/        # Request/Response DTOs
+    ├── dto/             # Service-layer result DTOs
+    │   └── http/        # HTTP request/response DTOs
     ├── types/           # Generated protobuf types
     └── middleware/      # HTTP middleware
 ```

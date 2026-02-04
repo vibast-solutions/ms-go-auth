@@ -32,9 +32,11 @@ auth/
 │   │   └── user.go         # Database operations (UserRepository, RefreshTokenRepository)
 │   ├── entity/
 │   │   └── user.go         # DB models (User, RefreshToken)
-│   ├── dto/http/
-│   │   ├── request.go      # HTTP request DTOs
-│   │   └── response.go     # HTTP response DTOs
+│   ├── dto/
+│   │   ├── result.go       # Service-layer result DTOs (RegisterResult, LoginResult, etc.)
+│   │   └── http/
+│   │       ├── request.go  # HTTP request DTOs
+│   │       └── response.go # HTTP response DTOs
 │   ├── types/
 │   │   ├── auth.pb.go      # Generated protobuf types
 │   │   └── auth_grpc.pb.go # Generated gRPC service
@@ -52,15 +54,17 @@ Two tables in MySQL database `auth`:
 |--------|------|------|-------------|
 | POST | /auth/register | No | Create user, returns confirm_token |
 | POST | /auth/login | No | Returns access_token + refresh_token |
+| POST | /auth/refresh-token | No | Exchange refresh token for new token pair (rotation) |
+| POST | /auth/generate-confirm-token | No | Get/regenerate confirm token for unconfirmed account |
 | POST | /auth/logout | Yes | Invalidates refresh token |
 | POST | /auth/change-password | Yes | Change password (requires old password) |
 | POST | /auth/confirm-account | No | Confirm account with token |
-| POST | /auth/request-password-reset | No | Generate reset token |
+| POST | /auth/request-password-reset | No | Get/generate reset token (reuses valid token) |
 | POST | /auth/reset-password | No | Reset password with token |
 
 ## gRPC Service
 Same operations available via gRPC on port 9090. See `proto/auth.proto` for definitions.
-Additional RPC: `ValidateToken` - validates JWT and returns user info.
+Additional RPCs: `ValidateToken` (validates JWT, returns user info), `RefreshToken`, `GenerateConfirmToken`.
 
 ## Configuration (Environment Variables)
 - `HTTP_PORT` (default: 8080)
@@ -75,12 +79,16 @@ Additional RPC: `ValidateToken` - validates JWT and returns user info.
 ## Key Implementation Details
 - Access tokens are JWTs with user_id and email in claims
 - Refresh tokens are UUIDs stored in database
+- Token refresh uses rotation: old refresh token is deleted, new pair is issued
+- Confirm token regeneration: returns existing valid token or creates new one; rejects if account already confirmed
+- Password reset token reuse: returns existing valid token instead of creating a new one
 - Passwords hashed with bcrypt (DefaultCost)
 - Account confirmation required before login
 - Password reset invalidates all refresh tokens for security
 - HTTP auth middleware extracts user_id from JWT and sets it in Echo context
+- Service-layer result DTOs live in `app/dto/` package, HTTP DTOs in `app/dto/http/`
 
 ## Common Tasks
-- **Add new endpoint**: Add DTO in `dto/http/`, method in `service/auth.go`, handler in `controller/auth.go`, route in `cmd/serve.go`
+- **Add new endpoint**: Add DTO in `dto/http/`, result struct in `dto/result.go` (if needed), method in `service/auth.go`, handler in `controller/auth.go`, route in `cmd/serve.go`
 - **Add gRPC method**: Update `proto/auth.proto`, regenerate types, add handler in `grpc/server.go`
 - **Regenerate protobuf**: `protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative proto/auth.proto`

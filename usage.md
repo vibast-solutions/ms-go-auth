@@ -11,7 +11,7 @@ You are building a microservice that depends on the auth microservice. This docu
 
 The auth service uses a two-token system:
 - **Access token**: A short-lived JWT (default 15 minutes). Include it in requests to protected endpoints as `Authorization: Bearer <access_token>`. The JWT payload contains `user_id` (uint64) and `email` (string).
-- **Refresh token**: A long-lived opaque UUID (default 7 days), stored in the database. Used to obtain new access tokens (not yet implemented as a standalone endpoint - clients must re-login when the access token expires).
+- **Refresh token**: A long-lived opaque UUID (default 7 days), stored in the database. Used to obtain new access tokens via `POST /auth/refresh-token`. Token rotation is enforced: each refresh issues a new token pair and invalidates the old refresh token.
 
 Users must confirm their account before they can log in. Registration returns a `confirm_token` that must be submitted to confirm the account.
 
@@ -31,6 +31,8 @@ service AuthService {
   rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc GenerateConfirmToken(GenerateConfirmTokenRequest) returns (GenerateConfirmTokenResponse);
 }
 ```
 
@@ -53,7 +55,8 @@ If `valid` is `false`, reject the request. If `valid` is `true`, use `user_id` a
 | AlreadyExists | Email already registered (Register) |
 | Unauthenticated | Wrong email/password (Login) |
 | PermissionDenied | Account not confirmed (Login) |
-| NotFound | User not found (ChangePassword) |
+| NotFound | User not found (ChangePassword, GenerateConfirmToken) |
+| FailedPrecondition | Account already confirmed (GenerateConfirmToken) |
 | Internal | Server-side failure |
 
 ### Go client example
@@ -103,6 +106,16 @@ Status:   200 OK
 Errors:   400 (invalid/expired token)
 ```
 
+### POST /auth/generate-confirm-token
+Get a confirmation token for an unconfirmed account. If the account already has a valid (non-expired) token, it is returned as-is. If the token is expired or missing, a new one is generated.
+
+```
+Request:  {"email": "user@example.com"}
+Response: {"confirm_token": "uuid", "message": "confirm token generated successfully"}
+Status:   200 OK
+Errors:   400 (account already confirmed), 404 (user not found)
+```
+
 ### POST /auth/login
 Authenticate a confirmed user. Returns access and refresh tokens.
 
@@ -114,6 +127,16 @@ Errors:   400 (missing fields), 401 (wrong credentials), 403 (not confirmed)
 ```
 
 `expires_in` is in seconds (default 900 = 15 minutes).
+
+### POST /auth/refresh-token
+Exchange a refresh token for a new access token and refresh token. The old refresh token is invalidated (token rotation).
+
+```
+Request:  {"refresh_token": "uuid-from-login"}
+Response: {"access_token": "new-jwt", "refresh_token": "new-uuid", "expires_in": 900}
+Status:   200 OK
+Errors:   400 (missing refresh_token), 401 (invalid or expired refresh token)
+```
 
 ### POST /auth/logout
 Invalidate a refresh token. Requires `Authorization: Bearer <access_token>` header.
@@ -136,7 +159,7 @@ Errors:   400 (missing fields, wrong old password), 401 (missing/invalid access 
 ```
 
 ### POST /auth/request-password-reset
-Generate a password reset token. Does not reveal whether the email exists.
+Request a password reset token. If a valid (non-expired) reset token already exists, it is returned instead of generating a new one. Does not reveal whether the email exists.
 
 ```
 Request:  {"email": "user@example.com"}
@@ -162,11 +185,13 @@ Errors:   400 (invalid/expired token, missing fields)
 ### Registration flow
 1. `POST /auth/register` with email + password -> get `confirm_token`
 2. `POST /auth/confirm-account` with the token -> account is active
-3. `POST /auth/login` -> get `access_token` and `refresh_token`
+3. If the confirm token expired, call `POST /auth/generate-confirm-token` with email to get a new one
+4. `POST /auth/login` -> get `access_token` and `refresh_token`
 
 ### Authenticated request flow
 1. Include `Authorization: Bearer <access_token>` header in requests to protected endpoints
-2. If the access token is expired (401 response), re-login to get new tokens
+2. If the access token is expired (401 response), call `POST /auth/refresh-token` with the refresh token to get a new token pair
+3. If the refresh token is also expired (401 response), re-login
 
 ### Password reset flow
 1. `POST /auth/request-password-reset` with email -> get `reset_token`
