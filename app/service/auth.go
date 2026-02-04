@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"auth/app/dto"
 	"auth/app/entity"
 	"auth/app/repository"
 	"auth/config"
@@ -16,13 +17,14 @@ import (
 )
 
 var (
-	ErrUserExists          = errors.New("user already exists")
-	ErrUserNotFound        = errors.New("user not found")
-	ErrInvalidCredentials  = errors.New("invalid credentials")
-	ErrAccountNotConfirmed = errors.New("account not confirmed")
-	ErrInvalidToken        = errors.New("invalid or expired token")
-	ErrTokenExpired        = errors.New("token has expired")
-	ErrPasswordMismatch    = errors.New("old password is incorrect")
+	ErrUserExists              = errors.New("user already exists")
+	ErrUserNotFound            = errors.New("user not found")
+	ErrInvalidCredentials      = errors.New("invalid credentials")
+	ErrAccountNotConfirmed     = errors.New("account not confirmed")
+	ErrInvalidToken            = errors.New("invalid or expired token")
+	ErrTokenExpired            = errors.New("token has expired")
+	ErrPasswordMismatch        = errors.New("old password is incorrect")
+	ErrAccountAlreadyConfirmed = errors.New("account is already confirmed")
 )
 
 type Claims struct {
@@ -49,12 +51,7 @@ func NewAuthService(
 	}
 }
 
-type RegisterResult struct {
-	User         *entity.User
-	ConfirmToken string
-}
-
-func (s *AuthService) Register(ctx context.Context, email, password string) (*RegisterResult, error) {
+func (s *AuthService) Register(ctx context.Context, email, password string) (*dto.RegisterResult, error) {
 	existing, err := s.userRepo.FindByEmail(ctx, email)
 	if err != nil {
 		return nil, err
@@ -88,19 +85,13 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (*Re
 		return nil, err
 	}
 
-	return &RegisterResult{
+	return &dto.RegisterResult{
 		User:         user,
 		ConfirmToken: confirmToken,
 	}, nil
 }
 
-type LoginResult struct {
-	AccessToken  string
-	RefreshToken string
-	ExpiresIn    int64
-}
-
-func (s *AuthService) Login(ctx context.Context, email, password string, customTTL time.Duration) (*LoginResult, error) {
+func (s *AuthService) Login(ctx context.Context, email, password string, customTTL time.Duration) (*dto.LoginResult, error) {
 	user, err := s.userRepo.FindByEmail(ctx, email)
 	if err != nil {
 		return nil, err
@@ -132,7 +123,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string, customT
 		effectiveTTL = customTTL
 	}
 
-	return &LoginResult{
+	return &dto.LoginResult{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    int64(effectiveTTL.Seconds()),
@@ -185,17 +176,50 @@ func (s *AuthService) ConfirmAccount(ctx context.Context, token string) error {
 	return s.userRepo.Update(ctx, user)
 }
 
-type RequestPasswordResetResult struct {
-	ResetToken string
+func (s *AuthService) GenerateConfirmToken(ctx context.Context, email string) (string, error) {
+	user, err := s.userRepo.FindByEmail(ctx, email)
+	if err != nil {
+		return "", err
+	}
+	if user == nil {
+		return "", ErrUserNotFound
+	}
+
+	if user.IsConfirmed {
+		return "", ErrAccountAlreadyConfirmed
+	}
+
+	if user.ConfirmToken.Valid && user.ConfirmTokenExpiresAt.Valid && user.ConfirmTokenExpiresAt.Time.After(time.Now()) {
+		return user.ConfirmToken.String, nil
+	}
+
+	confirmToken := uuid.New().String()
+	user.ConfirmToken = sql.NullString{String: confirmToken, Valid: true}
+	user.ConfirmTokenExpiresAt = sql.NullTime{
+		Time:  time.Now().Add(s.cfg.ConfirmTokenTTL),
+		Valid: true,
+	}
+
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return "", err
+	}
+
+	return confirmToken, nil
 }
 
-func (s *AuthService) RequestPasswordReset(ctx context.Context, email string) (*RequestPasswordResetResult, error) {
+func (s *AuthService) RequestPasswordReset(ctx context.Context, email string) (*dto.RequestPasswordResetResult, error) {
 	user, err := s.userRepo.FindByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
 		return nil, ErrUserNotFound
+	}
+
+	if user.ResetToken.Valid && user.ResetTokenExpiresAt.Valid && user.ResetTokenExpiresAt.Time.After(time.Now()) {
+		return &dto.RequestPasswordResetResult{
+			ResetToken: user.ResetToken.String,
+		}, nil
 	}
 
 	resetToken := uuid.New().String()
@@ -209,7 +233,7 @@ func (s *AuthService) RequestPasswordReset(ctx context.Context, email string) (*
 		return nil, err
 	}
 
-	return &RequestPasswordResetResult{
+	return &dto.RequestPasswordResetResult{
 		ResetToken: resetToken,
 	}, nil
 }
@@ -243,7 +267,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	return s.refreshTokenRepo.DeleteByUserID(ctx, user.ID)
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*LoginResult, error) {
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*dto.LoginResult, error) {
 	token, err := s.refreshTokenRepo.FindByToken(ctx, refreshToken)
 	if err != nil {
 		return nil, err
@@ -278,7 +302,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*L
 		return nil, err
 	}
 
-	return &LoginResult{
+	return &dto.LoginResult{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
 		ExpiresIn:    int64(s.cfg.JWTAccessTokenTTL.Seconds()),

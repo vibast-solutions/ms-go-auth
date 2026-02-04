@@ -36,3 +36,7 @@ type ResetPasswordRequest struct {
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
+
+type GenerateConfirmTokenRequest struct {
+	Email string `json:"email"`
+}

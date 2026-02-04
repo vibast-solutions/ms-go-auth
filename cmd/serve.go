@@ -72,6 +72,7 @@ func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
 	auth.POST("/request-password-reset", authController.RequestPasswordReset)
 	auth.POST("/reset-password", authController.ResetPassword)
 	auth.POST("/refresh-token", authController.RefreshToken)
+	auth.POST("/generate-confirm-token", authController.GenerateConfirmToken)
 
 	authProtected := auth.Group("")
 	authProtected.Use(authMiddleware.RequireAuth)

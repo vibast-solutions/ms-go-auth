@@ -100,6 +100,33 @@ func (c *AuthController) Logout(ctx echo.Context) error {
 	})
 }
 
+func (c *AuthController) GenerateConfirmToken(ctx echo.Context) error {
+	var req dto.GenerateConfirmTokenRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid request body"})
+	}
+
+	if req.Email == "" {
+		return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "email is required"})
+	}
+
+	token, err := c.authService.GenerateConfirmToken(ctx.Request().Context(), req.Email)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return ctx.JSON(http.StatusNotFound, dto.ErrorResponse{Error: "user not found"})
+		}
+		if errors.Is(err, service.ErrAccountAlreadyConfirmed) {
+			return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "account is already confirmed"})
+		}
+		return ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "internal server error"})
+	}
+
+	return ctx.JSON(http.StatusOK, dto.GenerateConfirmTokenResponse{
+		ConfirmToken: token,
+		Message:      "confirm token generated successfully",
+	})
+}
+
 func (c *AuthController) RefreshToken(ctx echo.Context) error {
 	var req dto.RefreshTokenRequest
 	if err := ctx.Bind(&req); err != nil {

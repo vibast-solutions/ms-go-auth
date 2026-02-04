@@ -163,6 +163,28 @@ func (s *AuthServer) ResetPassword(ctx context.Context, req *types.ResetPassword
 	}, nil
 }
 
+func (s *AuthServer) GenerateConfirmToken(ctx context.Context, req *types.GenerateConfirmTokenRequest) (*types.GenerateConfirmTokenResponse, error) {
+	if req.Email == "" {
+		return nil, status.Error(codes.InvalidArgument, "email is required")
+	}
+
+	token, err := s.authService.GenerateConfirmToken(ctx, req.Email)
+	if err != nil {
+		if err == service.ErrUserNotFound {
+			return nil, status.Error(codes.NotFound, "user not found")
+		}
+		if err == service.ErrAccountAlreadyConfirmed {
+			return nil, status.Error(codes.FailedPrecondition, "account is already confirmed")
+		}
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
+
+	return &types.GenerateConfirmTokenResponse{
+		ConfirmToken: token,
+		Message:      "confirm token generated successfully",
+	}, nil
+}
+
 func (s *AuthServer) ValidateToken(ctx context.Context, req *types.ValidateTokenRequest) (*types.ValidateTokenResponse, error) {
 	if req.AccessToken == "" {
 		return nil, status.Error(codes.InvalidArgument, "access_token is required")

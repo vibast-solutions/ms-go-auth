@@ -14,6 +14,7 @@ service AuthService {
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc GenerateConfirmToken(GenerateConfirmTokenRequest) returns (GenerateConfirmTokenResponse);
 }
 
 message RegisterRequest {
@@ -92,6 +93,15 @@ message RefreshTokenResponse {
   string access_token = 1;
   string refresh_token = 2;
   int64 expires_in = 3;
+}
+
+message GenerateConfirmTokenRequest {
+  string email = 1;
+}
+
+message GenerateConfirmTokenResponse {
+  string confirm_token = 1;
+  string message = 2;
 }
 
 message ValidateTokenRequest {

@@ -34,6 +34,11 @@ type ResetPasswordResponse struct {
 	Message string `json:"message"`
 }
 
+type GenerateConfirmTokenResponse struct {
+	ConfirmToken string `json:"confirm_token"`
+	Message      string `json:"message"`
+}
+
 type RefreshTokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
