@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"auth/app/dto"
@@ -25,6 +26,7 @@ var (
 	ErrTokenExpired            = errors.New("token has expired")
 	ErrPasswordMismatch        = errors.New("old password is incorrect")
 	ErrAccountAlreadyConfirmed = errors.New("account is already confirmed")
+	ErrWeakPassword            = errors.New("password does not meet policy requirements")
 )
 
 type Claims struct {
@@ -34,17 +36,20 @@ type Claims struct {
 }
 
 type AuthService struct {
+	db               *sql.DB
 	userRepo         *repository.UserRepository
 	refreshTokenRepo *repository.RefreshTokenRepository
 	cfg              *config.Config
 }
 
 func NewAuthService(
+	db *sql.DB,
 	userRepo *repository.UserRepository,
 	refreshTokenRepo *repository.RefreshTokenRepository,
 	cfg *config.Config,
 ) *AuthService {
 	return &AuthService{
+		db:               db,
 		userRepo:         userRepo,
 		refreshTokenRepo: refreshTokenRepo,
 		cfg:              cfg,
@@ -52,12 +57,18 @@ func NewAuthService(
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string) (*dto.RegisterResult, error) {
-	existing, err := s.userRepo.FindByEmail(ctx, email)
+	canonicalEmail := CanonicalizeEmail(email)
+
+	existing, err := s.userRepo.FindByCanonicalEmail(ctx, canonicalEmail)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
 		return nil, ErrUserExists
+	}
+
+	if err := s.cfg.PasswordPolicy.Validate(password); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrWeakPassword, err.Error())
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -69,10 +80,11 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (*dt
 	now := time.Now()
 
 	user := &entity.User{
-		Email:        email,
-		PasswordHash: string(hashedPassword),
-		IsConfirmed:  false,
-		ConfirmToken: sql.NullString{String: confirmToken, Valid: true},
+		Email:          email,
+		CanonicalEmail: canonicalEmail,
+		PasswordHash:   string(hashedPassword),
+		IsConfirmed:    false,
+		ConfirmToken:   sql.NullString{String: confirmToken, Valid: true},
 		ConfirmTokenExpiresAt: sql.NullTime{
 			Time:  now.Add(s.cfg.ConfirmTokenTTL),
 			Valid: true,
@@ -92,7 +104,8 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (*dt
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string, customTTL time.Duration) (*dto.LoginResult, error) {
-	user, err := s.userRepo.FindByEmail(ctx, email)
+	canonicalEmail := CanonicalizeEmail(email)
+	user, err := s.userRepo.FindByCanonicalEmail(ctx, canonicalEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +144,8 @@ func (s *AuthService) Login(ctx context.Context, email, password string, customT
 }
 
 func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
-	return s.refreshTokenRepo.DeleteByToken(ctx, refreshToken)
+	_, err := s.refreshTokenRepo.DeleteByToken(ctx, refreshToken)
+	return err
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, oldPassword, newPassword string) error {
@@ -147,13 +161,21 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, oldPass
 		return ErrPasswordMismatch
 	}
 
+	if err := s.cfg.PasswordPolicy.Validate(newPassword); err != nil {
+		return fmt.Errorf("%w: %s", ErrWeakPassword, err.Error())
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 
 	user.PasswordHash = string(hashedPassword)
-	return s.userRepo.Update(ctx, user)
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return err
+	}
+
+	return s.refreshTokenRepo.DeleteByUserID(ctx, user.ID)
 }
 
 func (s *AuthService) ConfirmAccount(ctx context.Context, token string) error {
@@ -177,7 +199,8 @@ func (s *AuthService) ConfirmAccount(ctx context.Context, token string) error {
 }
 
 func (s *AuthService) GenerateConfirmToken(ctx context.Context, email string) (string, error) {
-	user, err := s.userRepo.FindByEmail(ctx, email)
+	canonicalEmail := CanonicalizeEmail(email)
+	user, err := s.userRepo.FindByCanonicalEmail(ctx, canonicalEmail)
 	if err != nil {
 		return "", err
 	}
@@ -208,7 +231,8 @@ func (s *AuthService) GenerateConfirmToken(ctx context.Context, email string) (s
 }
 
 func (s *AuthService) RequestPasswordReset(ctx context.Context, email string) (*dto.RequestPasswordResetResult, error) {
-	user, err := s.userRepo.FindByEmail(ctx, email)
+	canonicalEmail := CanonicalizeEmail(email)
+	user, err := s.userRepo.FindByCanonicalEmail(ctx, canonicalEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -251,6 +275,10 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 		return ErrTokenExpired
 	}
 
+	if err := s.cfg.PasswordPolicy.Validate(newPassword); err != nil {
+		return fmt.Errorf("%w: %s", ErrWeakPassword, err.Error())
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -268,7 +296,15 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 }
 
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*dto.LoginResult, error) {
-	token, err := s.refreshTokenRepo.FindByToken(ctx, refreshToken)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	txRefreshRepo := s.refreshTokenRepo.WithTx(tx)
+
+	token, err := txRefreshRepo.FindByTokenForUpdate(ctx, refreshToken)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +316,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, ErrTokenExpired
 	}
 
-	user, err := s.userRepo.FindByID(ctx, token.UserID)
+	txUserRepo := s.userRepo.WithTx(tx)
+	user, err := txUserRepo.FindByID(ctx, token.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -288,8 +325,12 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, ErrInvalidToken
 	}
 
-	if err := s.refreshTokenRepo.DeleteByToken(ctx, refreshToken); err != nil {
+	rowsDeleted, err := txRefreshRepo.DeleteByToken(ctx, refreshToken)
+	if err != nil {
 		return nil, err
+	}
+	if rowsDeleted == 0 {
+		return nil, ErrInvalidToken
 	}
 
 	accessToken, err := s.generateAccessToken(user, 0)
@@ -297,8 +338,12 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, err
 	}
 
-	newRefreshToken, err := s.generateRefreshToken(ctx, user)
+	newRefreshToken, err := s.generateRefreshTokenWithRepo(ctx, txRefreshRepo, user)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -311,6 +356,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 
 func (s *AuthService) ValidateAccessToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return []byte(s.cfg.JWTSecret), nil
 	})
 	if err != nil {
@@ -345,6 +393,10 @@ func (s *AuthService) generateAccessToken(user *entity.User, ttl time.Duration) 
 }
 
 func (s *AuthService) generateRefreshToken(ctx context.Context, user *entity.User) (string, error) {
+	return s.generateRefreshTokenWithRepo(ctx, s.refreshTokenRepo, user)
+}
+
+func (s *AuthService) generateRefreshTokenWithRepo(ctx context.Context, repo *repository.RefreshTokenRepository, user *entity.User) (string, error) {
 	tokenString := uuid.New().String()
 	now := time.Now()
 
@@ -355,7 +407,7 @@ func (s *AuthService) generateRefreshToken(ctx context.Context, user *entity.Use
 		CreatedAt: now,
 	}
 
-	if err := s.refreshTokenRepo.Create(ctx, refreshToken); err != nil {
+	if err := repo.Create(ctx, refreshToken); err != nil {
 		return "", err
 	}
 

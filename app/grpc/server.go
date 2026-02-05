@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"auth/app/service"
@@ -30,6 +31,9 @@ func (s *AuthServer) Register(ctx context.Context, req *types.RegisterRequest) (
 		if err == service.ErrUserExists {
 			return nil, status.Error(codes.AlreadyExists, "user already exists")
 		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		return nil, status.Error(codes.Internal, "internal server error")
 	}
 
@@ -46,7 +50,13 @@ func (s *AuthServer) Login(ctx context.Context, req *types.LoginRequest) (*types
 		return nil, status.Error(codes.InvalidArgument, "email and password are required")
 	}
 
-	customTTL := time.Duration(req.TokenDuration) * time.Minute
+	var customTTL time.Duration
+	if req.TokenDuration < 0 {
+		return nil, status.Error(codes.InvalidArgument, "token_duration must be greater than 0")
+	}
+	if req.TokenDuration > 0 {
+		customTTL = time.Duration(req.TokenDuration) * time.Minute
+	}
 	result, err := s.authService.Login(ctx, req.Email, req.Password, customTTL)
 	if err != nil {
 		if err == service.ErrInvalidCredentials {
@@ -91,6 +101,9 @@ func (s *AuthServer) ChangePassword(ctx context.Context, req *types.ChangePasswo
 		}
 		if err == service.ErrPasswordMismatch {
 			return nil, status.Error(codes.InvalidArgument, "old password is incorrect")
+		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, status.Error(codes.Internal, "internal server error")
 	}
@@ -154,6 +167,9 @@ func (s *AuthServer) ResetPassword(ctx context.Context, req *types.ResetPassword
 		}
 		if err == service.ErrTokenExpired {
 			return nil, status.Error(codes.InvalidArgument, "token has expired")
+		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, status.Error(codes.Internal, "internal server error")
 	}

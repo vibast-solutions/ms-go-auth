@@ -8,21 +8,31 @@ import (
 	"auth/app/entity"
 )
 
-type UserRepository struct {
-	db *sql.DB
+type DBTX interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
 }
 
-func NewUserRepository(db *sql.DB) *UserRepository {
+type UserRepository struct {
+	db DBTX
+}
+
+func NewUserRepository(db DBTX) *UserRepository {
 	return &UserRepository{db: db}
+}
+
+func (r *UserRepository) WithTx(tx *sql.Tx) *UserRepository {
+	return &UserRepository{db: tx}
 }
 
 func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 	query := `
-		INSERT INTO users (email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	result, err := r.db.ExecContext(ctx, query,
 		user.Email,
+		user.CanonicalEmail,
 		user.PasswordHash,
 		user.IsConfirmed,
 		user.ConfirmToken,
@@ -42,16 +52,17 @@ func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 	return nil
 }
 
-func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*entity.User, error) {
+func (r *UserRepository) FindByCanonicalEmail(ctx context.Context, canonicalEmail string) (*entity.User, error) {
 	query := `
-		SELECT id, email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
+		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
 		       reset_token, reset_token_expires_at, created_at, updated_at
-		FROM users WHERE email = ?
+		FROM users WHERE canonical_email = ?
 	`
 	user := &entity.User{}
-	err := r.db.QueryRowContext(ctx, query, email).Scan(
+	err := r.db.QueryRowContext(ctx, query, canonicalEmail).Scan(
 		&user.ID,
 		&user.Email,
+		&user.CanonicalEmail,
 		&user.PasswordHash,
 		&user.IsConfirmed,
 		&user.ConfirmToken,
@@ -72,7 +83,7 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*entity
 
 func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User, error) {
 	query := `
-		SELECT id, email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
+		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
 		       reset_token, reset_token_expires_at, created_at, updated_at
 		FROM users WHERE id = ?
 	`
@@ -80,6 +91,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User,
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID,
 		&user.Email,
+		&user.CanonicalEmail,
 		&user.PasswordHash,
 		&user.IsConfirmed,
 		&user.ConfirmToken,
@@ -100,7 +112,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User,
 
 func (r *UserRepository) FindByConfirmToken(ctx context.Context, token string) (*entity.User, error) {
 	query := `
-		SELECT id, email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
+		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
 		       reset_token, reset_token_expires_at, created_at, updated_at
 		FROM users WHERE confirm_token = ?
 	`
@@ -108,6 +120,7 @@ func (r *UserRepository) FindByConfirmToken(ctx context.Context, token string) (
 	err := r.db.QueryRowContext(ctx, query, token).Scan(
 		&user.ID,
 		&user.Email,
+		&user.CanonicalEmail,
 		&user.PasswordHash,
 		&user.IsConfirmed,
 		&user.ConfirmToken,
@@ -128,7 +141,7 @@ func (r *UserRepository) FindByConfirmToken(ctx context.Context, token string) (
 
 func (r *UserRepository) FindByResetToken(ctx context.Context, token string) (*entity.User, error) {
 	query := `
-		SELECT id, email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
+		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
 		       reset_token, reset_token_expires_at, created_at, updated_at
 		FROM users WHERE reset_token = ?
 	`
@@ -136,6 +149,7 @@ func (r *UserRepository) FindByResetToken(ctx context.Context, token string) (*e
 	err := r.db.QueryRowContext(ctx, query, token).Scan(
 		&user.ID,
 		&user.Email,
+		&user.CanonicalEmail,
 		&user.PasswordHash,
 		&user.IsConfirmed,
 		&user.ConfirmToken,
@@ -158,6 +172,7 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 	query := `
 		UPDATE users SET
 			email = ?,
+			canonical_email = ?,
 			password_hash = ?,
 			is_confirmed = ?,
 			confirm_token = ?,
@@ -170,6 +185,7 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 	user.UpdatedAt = time.Now()
 	_, err := r.db.ExecContext(ctx, query,
 		user.Email,
+		user.CanonicalEmail,
 		user.PasswordHash,
 		user.IsConfirmed,
 		user.ConfirmToken,
@@ -183,11 +199,15 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 }
 
 type RefreshTokenRepository struct {
-	db *sql.DB
+	db DBTX
 }
 
-func NewRefreshTokenRepository(db *sql.DB) *RefreshTokenRepository {
+func NewRefreshTokenRepository(db DBTX) *RefreshTokenRepository {
 	return &RefreshTokenRepository{db: db}
+}
+
+func (r *RefreshTokenRepository) WithTx(tx *sql.Tx) *RefreshTokenRepository {
+	return &RefreshTokenRepository{db: tx}
 }
 
 func (r *RefreshTokenRepository) Create(ctx context.Context, token *entity.RefreshToken) error {
@@ -235,10 +255,35 @@ func (r *RefreshTokenRepository) FindByToken(ctx context.Context, token string) 
 	return rt, nil
 }
 
-func (r *RefreshTokenRepository) DeleteByToken(ctx context.Context, token string) error {
+func (r *RefreshTokenRepository) FindByTokenForUpdate(ctx context.Context, token string) (*entity.RefreshToken, error) {
+	query := `
+		SELECT id, user_id, token, expires_at, created_at
+		FROM refresh_tokens WHERE token = ? FOR UPDATE
+	`
+	rt := &entity.RefreshToken{}
+	err := r.db.QueryRowContext(ctx, query, token).Scan(
+		&rt.ID,
+		&rt.UserID,
+		&rt.Token,
+		&rt.ExpiresAt,
+		&rt.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return rt, nil
+}
+
+func (r *RefreshTokenRepository) DeleteByToken(ctx context.Context, token string) (int64, error) {
 	query := `DELETE FROM refresh_tokens WHERE token = ?`
-	_, err := r.db.ExecContext(ctx, query, token)
-	return err
+	result, err := r.db.ExecContext(ctx, query, token)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (r *RefreshTokenRepository) DeleteByUserID(ctx context.Context, userID uint64) error {

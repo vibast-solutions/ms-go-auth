@@ -26,7 +26,7 @@ func (m *AuthMiddleware) RequireAuth(next echo.HandlerFunc) echo.HandlerFunc {
 			})
 		}
 
-		parts := strings.Split(authHeader, " ")
+		parts := strings.Fields(authHeader)
 		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 			return c.JSON(http.StatusUnauthorized, map[string]string{
 				"error": "invalid authorization header format",

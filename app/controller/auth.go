@@ -34,6 +34,9 @@ func (c *AuthController) Register(ctx echo.Context) error {
 		if errors.Is(err, service.ErrUserExists) {
 			return ctx.JSON(http.StatusConflict, dto.ErrorResponse{Error: "user already exists"})
 		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: err.Error()})
+		}
 		return ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "internal server error"})
 	}
 
@@ -199,6 +202,9 @@ func (c *AuthController) ChangePassword(ctx echo.Context) error {
 		if errors.Is(err, service.ErrPasswordMismatch) {
 			return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "old password is incorrect"})
 		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: err.Error()})
+		}
 		return ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "internal server error"})
 	}
 
@@ -276,6 +282,9 @@ func (c *AuthController) ResetPassword(ctx echo.Context) error {
 		}
 		if errors.Is(err, service.ErrTokenExpired) {
 			return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "token has expired"})
+		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: err.Error()})
 		}
 		return ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "internal server error"})
 	}

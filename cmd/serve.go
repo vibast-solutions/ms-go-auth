@@ -33,7 +33,10 @@ func init() {
 }
 
 func runServe(cmd *cobra.Command, args []string) {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
 
 	db, err := sql.Open("mysql", cfg.DSN())
 	if err != nil {
@@ -47,7 +50,7 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	userRepo := repository.NewUserRepository(db)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
-	authService := service.NewAuthService(userRepo, refreshTokenRepo, cfg)
+	authService := service.NewAuthService(db, userRepo, refreshTokenRepo, cfg)
 
 	go startGRPCServer(cfg, authService)
 
