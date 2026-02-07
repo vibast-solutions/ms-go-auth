@@ -70,7 +70,7 @@ Additional RPCs: `ValidateToken` (validates JWT, returns user info), `RefreshTok
 ## Configuration (Environment Variables)
 - `HTTP_PORT` (default: 8080)
 - `GRPC_PORT` (default: 9090)
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- `MYSQL_DSN`
 - `JWT_SECRET`
 - `JWT_ACCESS_TOKEN_TTL` (default: 15 min)
 - `JWT_REFRESH_TOKEN_TTL` (default: 7 days)

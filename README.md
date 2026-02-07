@@ -64,11 +64,7 @@ Set environment variables or use defaults:
 |----------|---------|-------------|
 | HTTP_PORT | 8080 | HTTP server port |
 | GRPC_PORT | 9090 | gRPC server port |
-| DB_HOST | localhost | MySQL host |
-| DB_PORT | 3306 | MySQL port |
-| DB_USER | root | MySQL user |
-| DB_PASSWORD | (empty) | MySQL password |
-| DB_NAME | auth | Database name |
+| MYSQL_DSN | (required) | MySQL DSN (e.g. `user:pass@tcp(host:3306)/auth?parseTime=true`) |
 | JWT_SECRET | (default) | Secret for signing JWTs |
 | JWT_ACCESS_TOKEN_TTL | 15 | Access token TTL in minutes |
 | JWT_REFRESH_TOKEN_TTL | 10080 | Refresh token TTL in minutes (7 days) |

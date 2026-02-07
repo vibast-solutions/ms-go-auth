@@ -15,11 +15,7 @@ import (
 type Config struct {
 	HTTPPort           string
 	GRPCPort           string
-	DBHost             string
-	DBPort             string
-	DBUser             string
-	DBPassword         string
-	DBName             string
+	MySQLDSN           string
 	JWTSecret          string
 	JWTAccessTokenTTL  time.Duration
 	JWTRefreshTokenTTL time.Duration
@@ -85,14 +81,15 @@ func Load() (*Config, error) {
 		return nil, errors.New("JWT_SECRET environment variable is required")
 	}
 
+	mysqlDSN := os.Getenv("MYSQL_DSN")
+	if mysqlDSN == "" {
+		return nil, errors.New("MYSQL_DSN environment variable is required")
+	}
+
 	return &Config{
 		HTTPPort:           getEnv("HTTP_PORT", "8080"),
 		GRPCPort:           getEnv("GRPC_PORT", "9090"),
-		DBHost:             getEnv("DB_HOST", "localhost"),
-		DBPort:             getEnv("DB_PORT", "3306"),
-		DBUser:             getEnv("DB_USER", "root"),
-		DBPassword:         getEnv("DB_PASSWORD", ""),
-		DBName:             getEnv("DB_NAME", "auth"),
+		MySQLDSN:           mysqlDSN,
 		JWTSecret:          jwtSecret,
 		JWTAccessTokenTTL:  getDurationEnv("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
 		JWTRefreshTokenTTL: getDurationEnv("JWT_REFRESH_TOKEN_TTL", 7*24*time.Hour),
@@ -103,7 +100,7 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) DSN() string {
-	return c.DBUser + ":" + c.DBPassword + "@tcp(" + c.DBHost + ":" + c.DBPort + ")/" + c.DBName + "?parseTime=true"
+	return c.MySQLDSN
 }
 
 func getEnv(key, defaultValue string) string {

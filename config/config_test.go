@@ -87,20 +87,25 @@ func TestLoadRequiresJWTSecret(t *testing.T) {
 	})
 
 	t.Setenv("JWT_SECRET", "")
+	t.Setenv("MYSQL_DSN", "")
 	if cfg, err := Load(); err == nil || cfg != nil {
 		t.Fatalf("expected error when JWT_SECRET is missing")
 	}
 }
 
+func TestLoadRequiresMySQLDSN(t *testing.T) {
+	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("MYSQL_DSN", "")
+	if cfg, err := Load(); err == nil || cfg != nil {
+		t.Fatalf("expected error when MYSQL_DSN is missing")
+	}
+}
+
 func TestLoadSuccess(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("MYSQL_DSN", "user:pass@tcp(db:3306)/authdb?parseTime=true")
 	t.Setenv("HTTP_PORT", "8081")
 	t.Setenv("GRPC_PORT", "9091")
-	t.Setenv("DB_HOST", "db")
-	t.Setenv("DB_PORT", "3307")
-	t.Setenv("DB_USER", "user")
-	t.Setenv("DB_PASSWORD", "pass")
-	t.Setenv("DB_NAME", "authdb")
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "20")
 	t.Setenv("JWT_REFRESH_TOKEN_TTL", "60")
 	t.Setenv("CONFIRM_TOKEN_TTL", "120")
@@ -118,8 +123,8 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.HTTPPort != "8081" || cfg.GRPCPort != "9091" {
 		t.Fatalf("unexpected ports: %s %s", cfg.HTTPPort, cfg.GRPCPort)
 	}
-	if cfg.DBHost != "db" || cfg.DBPort != "3307" || cfg.DBUser != "user" || cfg.DBPassword != "pass" || cfg.DBName != "authdb" {
-		t.Fatalf("unexpected db config: %+v", cfg)
+	if cfg.MySQLDSN != "user:pass@tcp(db:3306)/authdb?parseTime=true" {
+		t.Fatalf("unexpected mysql dsn: %s", cfg.MySQLDSN)
 	}
 	if cfg.JWTAccessTokenTTL != 20*time.Minute || cfg.JWTRefreshTokenTTL != 60*time.Minute {
 		t.Fatalf("unexpected jwt ttl: %v %v", cfg.JWTAccessTokenTTL, cfg.JWTRefreshTokenTTL)
@@ -138,26 +143,22 @@ func TestLoadSuccess(t *testing.T) {
 
 func TestDSN(t *testing.T) {
 	cfg := &Config{
-		DBUser:     "user",
-		DBPassword: "pass",
-		DBHost:     "localhost",
-		DBPort:     "3306",
-		DBName:     "auth",
+		MySQLDSN: "user:pass@tcp(localhost:3306)/auth?parseTime=true",
 	}
 	got := cfg.DSN()
-	want := "user:pass@tcp(localhost:3306)/auth?parseTime=true"
-	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
+	if got != cfg.MySQLDSN {
+		t.Fatalf("expected %q, got %q", cfg.MySQLDSN, got)
 	}
 }
 
 func TestLoadUsesDefaults(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/auth?parseTime=true")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("load failed: %v", err)
 	}
-	if cfg.HTTPPort == "" || cfg.GRPCPort == "" || cfg.DBHost == "" || cfg.DBPort == "" || cfg.DBUser == "" || cfg.DBName == "" {
+	if cfg.HTTPPort == "" || cfg.GRPCPort == "" || cfg.MySQLDSN == "" {
 		t.Fatalf("expected defaults to be populated")
 	}
 }
@@ -176,7 +177,7 @@ func TestLoadRespectsEnvFileLocation(t *testing.T) {
 	})
 
 	envPath := filepath.Join(tmp, ".env")
-	if err := os.WriteFile(envPath, []byte("JWT_SECRET=envfile-secret\nHTTP_PORT=9099\n"), 0600); err != nil {
+	if err := os.WriteFile(envPath, []byte("JWT_SECRET=envfile-secret\nMYSQL_DSN=user:pass@tcp(localhost:3306)/auth?parseTime=true\nHTTP_PORT=9099\n"), 0600); err != nil {
 		t.Fatalf("write .env failed: %v", err)
 	}
 
