@@ -1,5 +1,7 @@
 # Auth Microservice
 
+`github.com/vibast-solutions/ms-go-auth`
+
 Authentication microservice providing user registration, login, JWT token management, and password flows via HTTP and gRPC.
 
 ## Features
@@ -75,9 +77,21 @@ Set environment variables or use defaults:
 # Download dependencies
 go mod tidy
 
-# Build binary
-go build -o auth-service .
+# Build native binary
+make build
+
+# Cross-compile for Linux
+make build-linux-arm64
+make build-linux-amd64
+
+# Build all targets
+make build-all
+
+# Clean build artifacts
+make clean
 ```
+
+Binaries are output to the `build/` directory.
 
 ## Run
 
@@ -86,12 +100,31 @@ go build -o auth-service .
 go run main.go serve
 
 # Or run the built binary
-./auth-service serve
+./build/auth-service serve
 ```
 
 The service starts:
 - HTTP server on port 8080
 - gRPC server on port 9090
+
+## Version
+
+The binary includes a `version` command that shows the git tag and commit hash used during the build:
+
+```bash
+./build/auth-service version
+# auth-service v1.0.0 (commit: a3b2c1d)
+```
+
+Version info is injected at build time via `-ldflags` in the Makefile. When running with `go run`, it shows `dev (commit: unknown)`.
+
+## Importing
+
+This module can be imported by other Go services:
+
+```bash
+go get github.com/vibast-solutions/ms-go-auth
+```
 
 ## API Endpoints
 
@@ -318,7 +351,11 @@ curl -X POST http://localhost:8080/auth/change-password \
 ```
 auth/
 ├── main.go              # Entry point
+├── Makefile             # Build targets (native, linux-arm64, linux-amd64)
 ├── cmd/                 # CLI commands (Cobra)
+│   ├── root.go          # Root command
+│   ├── serve.go         # HTTP + gRPC servers
+│   └── version.go       # Version command (git tag + commit)
 ├── config/              # Configuration
 ├── proto/               # gRPC definitions
 └── app/

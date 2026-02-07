@@ -10,13 +10,19 @@ Authentication microservice built with Go, providing user registration, login, J
 - **Auth**: JWT (access + refresh tokens), bcrypt password hashing
 - **Dependencies**: See `go.mod`
 
+## Module
+- **Path**: `github.com/vibast-solutions/ms-go-auth`
+- Importable by other Go modules via `go get github.com/vibast-solutions/ms-go-auth`
+
 ## Directory Structure
 ```
 auth/
 ├── main.go                 # Entry point, calls cmd.Execute()
+├── Makefile                # Build targets (native, linux-arm64, linux-amd64)
 ├── cmd/
 │   ├── root.go             # Cobra root command
-│   └── serve.go            # Starts HTTP (8080) + gRPC (9090) servers
+│   ├── serve.go            # Starts HTTP (8080) + gRPC (9090) servers
+│   └── version.go          # Version command (shows git tag + commit hash)
 ├── config/
 │   └── config.go           # Environment-based configuration
 ├── proto/
@@ -88,6 +94,14 @@ Additional RPCs: `ValidateToken` (validates JWT, returns user info), `RefreshTok
 - Password reset invalidates all refresh tokens for security
 - HTTP auth middleware extracts user_id from JWT and sets it in Echo context
 - Service-layer result DTOs live in `app/dto/` package, HTTP DTOs in `app/dto/http/`
+
+## Build
+- `make build` — native binary to `build/auth-service`
+- `make build-linux-arm64` — Linux ARM64 cross-compile
+- `make build-linux-amd64` — Linux AMD64 cross-compile
+- `make build-all` — all targets
+- `make clean` — remove `build/` directory
+- Version and commit hash are injected at build time via `-ldflags` (see `cmd/version.go`)
 
 ## Common Tasks
 - **Add new endpoint**: Add DTO in `dto/http/`, result struct in `dto/result.go` (if needed), method in `service/auth.go`, handler in `controller/auth.go`, route in `cmd/serve.go`

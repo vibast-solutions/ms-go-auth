@@ -5,7 +5,7 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 LDFLAGS := -X github.com/vibast-solutions/ms-go-auth/cmd.Version=$(VERSION) \
            -X github.com/vibast-solutions/ms-go-auth/cmd.Commit=$(COMMIT)
 
-.PHONY: build build-linux-arm64 build-linux-amd64 build-all clean
+.PHONY: build build-linux-arm64 build-linux-amd64 build-darwin-arm64 build-darwin-amd64 build-all clean
 
 build:
 	@mkdir -p $(BUILD_DIR)
@@ -19,7 +19,15 @@ build-linux-amd64:
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 .
 
-build-all: build build-linux-arm64 build-linux-amd64
+build-darwin-arm64:
+	@mkdir -p $(BUILD_DIR)
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 .
+
+build-darwin-amd64:
+	@mkdir -p $(BUILD_DIR)
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 .
+
+build-all: build build-linux-arm64 build-linux-amd64 build-darwin-arm64 build-darwin-amd64
 
 clean:
 	rm -rf $(BUILD_DIR)
