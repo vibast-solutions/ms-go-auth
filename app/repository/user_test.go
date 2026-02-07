@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"auth/app/entity"
-	"auth/app/repository"
+	"github.com/vibast-solutions/ms-go-auth/app/entity"
+	"github.com/vibast-solutions/ms-go-auth/app/repository"
 
 	"github.com/DATA-DOG/go-sqlmock"
 )

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	dto "auth/app/dto/http"
-	"auth/app/service"
+	dto "github.com/vibast-solutions/ms-go-auth/app/dto/http"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
 
 	"github.com/labstack/echo/v4"
 )

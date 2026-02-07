@@ -1,6 +1,6 @@
 package main
 
-import "auth/cmd"
+import "github.com/vibast-solutions/ms-go-auth/cmd"
 
 func main() {
 	cmd.Execute()

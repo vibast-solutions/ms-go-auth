@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	authgrpc "auth/app/grpc"
-	"auth/app/repository"
-	"auth/app/service"
-	"auth/app/types"
-	"auth/config"
+	authgrpc "github.com/vibast-solutions/ms-go-auth/app/grpc"
+	"github.com/vibast-solutions/ms-go-auth/app/repository"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
+	"github.com/vibast-solutions/ms-go-auth/app/types"
+	"github.com/vibast-solutions/ms-go-auth/config"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"google.golang.org/grpc/codes"

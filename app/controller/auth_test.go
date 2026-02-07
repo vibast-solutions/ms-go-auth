@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"auth/app/controller"
-	"auth/app/repository"
-	"auth/app/service"
-	"auth/config"
+	"github.com/vibast-solutions/ms-go-auth/app/controller"
+	"github.com/vibast-solutions/ms-go-auth/app/repository"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
+	"github.com/vibast-solutions/ms-go-auth/config"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/labstack/echo/v4"

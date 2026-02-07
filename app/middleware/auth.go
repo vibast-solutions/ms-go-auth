@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"auth/app/service"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
 
 	"github.com/labstack/echo/v4"
 )

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"auth/app/types"
+	"github.com/vibast-solutions/ms-go-auth/app/types"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

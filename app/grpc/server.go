@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"auth/app/service"
-	"auth/app/types"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
+	"github.com/vibast-solutions/ms-go-auth/app/types"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

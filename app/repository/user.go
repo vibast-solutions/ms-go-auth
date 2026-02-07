@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"auth/app/entity"
+	"github.com/vibast-solutions/ms-go-auth/app/entity"
 )
 
 type DBTX interface {

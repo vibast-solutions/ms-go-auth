@@ -6,13 +6,13 @@ import (
 	"log"
 	"net"
 
-	"auth/app/controller"
-	authgrpc "auth/app/grpc"
-	"auth/app/middleware"
-	"auth/app/repository"
-	"auth/app/service"
-	"auth/app/types"
-	"auth/config"
+	"github.com/vibast-solutions/ms-go-auth/app/controller"
+	authgrpc "github.com/vibast-solutions/ms-go-auth/app/grpc"
+	"github.com/vibast-solutions/ms-go-auth/app/middleware"
+	"github.com/vibast-solutions/ms-go-auth/app/repository"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
+	"github.com/vibast-solutions/ms-go-auth/app/types"
+	"github.com/vibast-solutions/ms-go-auth/config"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/labstack/echo/v4"
@@ -32,7 +32,7 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 }
 
-func runServe(cmd *cobra.Command, args []string) {
+func runServe(_ *cobra.Command, _ []string) {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
@@ -59,6 +59,7 @@ func runServe(cmd *cobra.Command, args []string) {
 
 func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
 	e := echo.New()
+	defer e.Close()
 	e.HideBanner = true
 
 	e.Use(echomiddleware.Logger())
@@ -96,6 +97,7 @@ func startGRPCServer(cfg *config.Config, authService *service.AuthService) {
 	}
 
 	grpcServer := grpc.NewServer()
+	defer grpcServer.GracefulStop()
 	authServer := authgrpc.NewAuthServer(authService)
 	types.RegisterAuthServiceServer(grpcServer, authServer)
 

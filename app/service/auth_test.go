@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"auth/app/repository"
-	"auth/app/service"
-	"auth/config"
+	"github.com/vibast-solutions/ms-go-auth/app/repository"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
+	"github.com/vibast-solutions/ms-go-auth/config"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/golang-jwt/jwt/v5"

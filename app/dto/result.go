@@ -1,6 +1,6 @@
 package dto
 
-import "auth/app/entity"
+import "github.com/vibast-solutions/ms-go-auth/app/entity"
 
 type RegisterResult struct {
 	User         *entity.User
