@@ -51,7 +51,7 @@ message LogoutResponse {
 }
 
 message ChangePasswordRequest {
-  uint64 user_id = 1;
+  string access_token = 1;
   string old_password = 2;
   string new_password = 3;
 }

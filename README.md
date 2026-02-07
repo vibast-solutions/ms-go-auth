@@ -84,6 +84,10 @@ make build
 make build-linux-arm64
 make build-linux-amd64
 
+# Cross-compile for macOS
+make build-darwin-arm64
+make build-darwin-amd64
+
 # Build all targets
 make build-all
 
@@ -351,7 +355,7 @@ curl -X POST http://localhost:8080/auth/change-password \
 ```
 auth/
 ├── main.go              # Entry point
-├── Makefile             # Build targets (native, linux-arm64, linux-amd64)
+├── Makefile             # Build targets (native, linux, darwin — arm64/amd64)
 ├── cmd/                 # CLI commands (Cobra)
 │   ├── root.go          # Root command
 │   ├── serve.go         # HTTP + gRPC servers

@@ -18,7 +18,7 @@ Authentication microservice built with Go, providing user registration, login, J
 ```
 auth/
 ├── main.go                 # Entry point, calls cmd.Execute()
-├── Makefile                # Build targets (native, linux-arm64, linux-amd64)
+├── Makefile                # Build targets (native, linux, darwin — arm64/amd64)
 ├── cmd/
 │   ├── root.go             # Cobra root command
 │   ├── serve.go            # Starts HTTP (8080) + gRPC (9090) servers
@@ -99,6 +99,8 @@ Additional RPCs: `ValidateToken` (validates JWT, returns user info), `RefreshTok
 - `make build` — native binary to `build/auth-service`
 - `make build-linux-arm64` — Linux ARM64 cross-compile
 - `make build-linux-amd64` — Linux AMD64 cross-compile
+- `make build-darwin-arm64` — macOS ARM64 (Apple Silicon) cross-compile
+- `make build-darwin-amd64` — macOS AMD64 (Intel) cross-compile
 - `make build-all` — all targets
 - `make clean` — remove `build/` directory
 - Version and commit hash are injected at build time via `-ldflags` (see `cmd/version.go`)

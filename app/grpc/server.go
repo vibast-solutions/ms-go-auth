@@ -95,11 +95,16 @@ func (s *AuthServer) Logout(ctx context.Context, req *types.LogoutRequest) (*typ
 }
 
 func (s *AuthServer) ChangePassword(ctx context.Context, req *types.ChangePasswordRequest) (*types.ChangePasswordResponse, error) {
-	if req.UserId == 0 || req.OldPassword == "" || req.NewPassword == "" {
-		return nil, status.Error(codes.InvalidArgument, "user_id, old_password, and new_password are required")
+	if req.AccessToken == "" || req.OldPassword == "" || req.NewPassword == "" {
+		return nil, status.Error(codes.InvalidArgument, "access_token, old_password, and new_password are required")
 	}
 
-	err := s.authService.ChangePassword(ctx, req.UserId, req.OldPassword, req.NewPassword)
+	claims, err := s.authService.ValidateAccessToken(req.AccessToken)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "invalid access token")
+	}
+
+	err = s.authService.ChangePassword(ctx, claims.UserID, req.OldPassword, req.NewPassword)
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return nil, status.Error(codes.NotFound, "user not found")

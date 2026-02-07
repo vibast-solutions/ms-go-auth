@@ -712,7 +712,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 
 	step("ChangePasswordWeak", func(t *testing.T) {
 		_, err = client.ChangePassword(context.Background(), &types.ChangePasswordRequest{
-			UserId:      state.userID,
+			AccessToken: state.accessToken,
 			OldPassword: state.password,
 			NewPassword: "short",
 		})
@@ -723,7 +723,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 
 	step("ChangePassword", func(t *testing.T) {
 		_, err = client.ChangePassword(context.Background(), &types.ChangePasswordRequest{
-			UserId:      state.userID,
+			AccessToken: state.accessToken,
 			OldPassword: state.password,
 			NewPassword: state.newPassword,
 		})
