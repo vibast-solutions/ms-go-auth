@@ -28,7 +28,7 @@ func (s *AuthServer) Register(ctx context.Context, req *types.RegisterRequest) (
 
 	result, err := s.authService.Register(ctx, req.Email, req.Password)
 	if err != nil {
-		if err == service.ErrUserExists {
+		if errors.Is(err, service.ErrUserExists) {
 			return nil, status.Error(codes.AlreadyExists, "user already exists")
 		}
 		if errors.Is(err, service.ErrWeakPassword) {
@@ -59,10 +59,10 @@ func (s *AuthServer) Login(ctx context.Context, req *types.LoginRequest) (*types
 	}
 	result, err := s.authService.Login(ctx, req.Email, req.Password, customTTL)
 	if err != nil {
-		if err == service.ErrInvalidCredentials {
+		if errors.Is(err, service.ErrInvalidCredentials) {
 			return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 		}
-		if err == service.ErrAccountNotConfirmed {
+		if errors.Is(err, service.ErrAccountNotConfirmed) {
 			return nil, status.Error(codes.PermissionDenied, "account not confirmed")
 		}
 		return nil, status.Error(codes.Internal, "internal server error")
@@ -76,11 +76,16 @@ func (s *AuthServer) Login(ctx context.Context, req *types.LoginRequest) (*types
 }
 
 func (s *AuthServer) Logout(ctx context.Context, req *types.LogoutRequest) (*types.LogoutResponse, error) {
-	if req.RefreshToken == "" {
-		return nil, status.Error(codes.InvalidArgument, "refresh_token is required")
+	if req.AccessToken == "" || req.RefreshToken == "" {
+		return nil, status.Error(codes.InvalidArgument, "access_token and refresh_token are required")
 	}
 
-	if err := s.authService.Logout(ctx, req.RefreshToken); err != nil {
+	claims, err := s.authService.ValidateAccessToken(req.AccessToken)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "invalid access token")
+	}
+
+	if err := s.authService.Logout(ctx, claims.UserID, req.RefreshToken); err != nil {
 		return nil, status.Error(codes.Internal, "internal server error")
 	}
 
@@ -96,10 +101,10 @@ func (s *AuthServer) ChangePassword(ctx context.Context, req *types.ChangePasswo
 
 	err := s.authService.ChangePassword(ctx, req.UserId, req.OldPassword, req.NewPassword)
 	if err != nil {
-		if err == service.ErrUserNotFound {
+		if errors.Is(err, service.ErrUserNotFound) {
 			return nil, status.Error(codes.NotFound, "user not found")
 		}
-		if err == service.ErrPasswordMismatch {
+		if errors.Is(err, service.ErrPasswordMismatch) {
 			return nil, status.Error(codes.InvalidArgument, "old password is incorrect")
 		}
 		if errors.Is(err, service.ErrWeakPassword) {
@@ -120,10 +125,10 @@ func (s *AuthServer) ConfirmAccount(ctx context.Context, req *types.ConfirmAccou
 
 	err := s.authService.ConfirmAccount(ctx, req.Token)
 	if err != nil {
-		if err == service.ErrInvalidToken {
+		if errors.Is(err, service.ErrInvalidToken) {
 			return nil, status.Error(codes.InvalidArgument, "invalid token")
 		}
-		if err == service.ErrTokenExpired {
+		if errors.Is(err, service.ErrTokenExpired) {
 			return nil, status.Error(codes.InvalidArgument, "token has expired")
 		}
 		return nil, status.Error(codes.Internal, "internal server error")
@@ -141,7 +146,7 @@ func (s *AuthServer) RequestPasswordReset(ctx context.Context, req *types.Reques
 
 	result, err := s.authService.RequestPasswordReset(ctx, req.Email)
 	if err != nil {
-		if err == service.ErrUserNotFound {
+		if errors.Is(err, service.ErrUserNotFound) {
 			return &types.RequestPasswordResetResponse{
 				Message: "if the email exists, a reset token has been generated",
 			}, nil
@@ -162,10 +167,10 @@ func (s *AuthServer) ResetPassword(ctx context.Context, req *types.ResetPassword
 
 	err := s.authService.ResetPassword(ctx, req.Token, req.NewPassword)
 	if err != nil {
-		if err == service.ErrInvalidToken {
+		if errors.Is(err, service.ErrInvalidToken) {
 			return nil, status.Error(codes.InvalidArgument, "invalid token")
 		}
-		if err == service.ErrTokenExpired {
+		if errors.Is(err, service.ErrTokenExpired) {
 			return nil, status.Error(codes.InvalidArgument, "token has expired")
 		}
 		if errors.Is(err, service.ErrWeakPassword) {
@@ -186,10 +191,10 @@ func (s *AuthServer) GenerateConfirmToken(ctx context.Context, req *types.Genera
 
 	token, err := s.authService.GenerateConfirmToken(ctx, req.Email)
 	if err != nil {
-		if err == service.ErrUserNotFound {
+		if errors.Is(err, service.ErrUserNotFound) {
 			return nil, status.Error(codes.NotFound, "user not found")
 		}
-		if err == service.ErrAccountAlreadyConfirmed {
+		if errors.Is(err, service.ErrAccountAlreadyConfirmed) {
 			return nil, status.Error(codes.FailedPrecondition, "account is already confirmed")
 		}
 		return nil, status.Error(codes.Internal, "internal server error")
@@ -201,7 +206,7 @@ func (s *AuthServer) GenerateConfirmToken(ctx context.Context, req *types.Genera
 	}, nil
 }
 
-func (s *AuthServer) ValidateToken(ctx context.Context, req *types.ValidateTokenRequest) (*types.ValidateTokenResponse, error) {
+func (s *AuthServer) ValidateToken(_ context.Context, req *types.ValidateTokenRequest) (*types.ValidateTokenResponse, error) {
 	if req.AccessToken == "" {
 		return nil, status.Error(codes.InvalidArgument, "access_token is required")
 	}
@@ -217,5 +222,25 @@ func (s *AuthServer) ValidateToken(ctx context.Context, req *types.ValidateToken
 		Valid:  true,
 		UserId: claims.UserID,
 		Email:  claims.Email,
+	}, nil
+}
+
+func (s *AuthServer) RefreshToken(ctx context.Context, req *types.RefreshTokenRequest) (*types.RefreshTokenResponse, error) {
+	if req.RefreshToken == "" {
+		return nil, status.Error(codes.InvalidArgument, "refresh_token is required")
+	}
+
+	result, err := s.authService.RefreshToken(ctx, req.RefreshToken)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidToken) || errors.Is(err, service.ErrTokenExpired) {
+			return nil, status.Error(codes.Unauthenticated, "invalid or expired refresh token")
+		}
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
+
+	return &types.RefreshTokenResponse{
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		ExpiresIn:    result.ExpiresIn,
 	}, nil
 }

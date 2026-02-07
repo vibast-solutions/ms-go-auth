@@ -277,9 +277,9 @@ func (r *RefreshTokenRepository) FindByTokenForUpdate(ctx context.Context, token
 	return rt, nil
 }
 
-func (r *RefreshTokenRepository) DeleteByToken(ctx context.Context, token string) (int64, error) {
-	query := `DELETE FROM refresh_tokens WHERE token = ?`
-	result, err := r.db.ExecContext(ctx, query, token)
+func (r *RefreshTokenRepository) DeleteByToken(ctx context.Context, token string, userID uint64) (int64, error) {
+	query := `DELETE FROM refresh_tokens WHERE token = ? AND user_id = ?`
+	result, err := r.db.ExecContext(ctx, query, token, userID)
 	if err != nil {
 		return 0, err
 	}

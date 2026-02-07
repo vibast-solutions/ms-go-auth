@@ -143,8 +143,8 @@ func (s *AuthService) Login(ctx context.Context, email, password string, customT
 	}, nil
 }
 
-func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
-	_, err := s.refreshTokenRepo.DeleteByToken(ctx, refreshToken)
+func (s *AuthService) Logout(ctx context.Context, userID uint64, refreshToken string) error {
+	_, err := s.refreshTokenRepo.DeleteByToken(ctx, refreshToken, userID)
 	return err
 }
 
@@ -325,7 +325,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, ErrInvalidToken
 	}
 
-	rowsDeleted, err := txRefreshRepo.DeleteByToken(ctx, refreshToken)
+	rowsDeleted, err := txRefreshRepo.DeleteByToken(ctx, refreshToken, token.UserID)
 	if err != nil {
 		return nil, err
 	}

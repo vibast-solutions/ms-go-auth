@@ -94,7 +94,12 @@ func (c *AuthController) Logout(ctx echo.Context) error {
 		return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "refresh_token is required"})
 	}
 
-	if err := c.authService.Logout(ctx.Request().Context(), req.RefreshToken); err != nil {
+	userID, ok := ctx.Get("user_id").(uint64)
+	if !ok {
+		return ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "unauthorized"})
+	}
+
+	if err := c.authService.Logout(ctx.Request().Context(), userID, req.RefreshToken); err != nil {
 		return ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "internal server error"})
 	}
 
