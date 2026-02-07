@@ -84,14 +84,16 @@ func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
 	authProtected.POST("/logout", authController.Logout)
 	authProtected.POST("/change-password", authController.ChangePassword)
 
-	log.Printf("Starting HTTP server on :%s", cfg.HTTPPort)
-	if err := e.Start(":" + cfg.HTTPPort); err != nil {
+	httpAddr := net.JoinHostPort(cfg.HTTPHost, cfg.HTTPPort)
+	log.Printf("Starting HTTP server on %s", httpAddr)
+	if err := e.Start(httpAddr); err != nil {
 		log.Fatalf("Failed to start HTTP server: %v", err)
 	}
 }
 
 func startGRPCServer(cfg *config.Config, authService *service.AuthService) {
-	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+	grpcAddr := net.JoinHostPort(cfg.GRPCHost, cfg.GRPCPort)
+	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
 		log.Fatalf("Failed to listen on gRPC port: %v", err)
 	}
@@ -101,7 +103,7 @@ func startGRPCServer(cfg *config.Config, authService *service.AuthService) {
 	authServer := authgrpc.NewAuthServer(authService)
 	types.RegisterAuthServiceServer(grpcServer, authServer)
 
-	log.Printf("Starting gRPC server on :%s", cfg.GRPCPort)
+	log.Printf("Starting gRPC server on %s", grpcAddr)
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("Failed to start gRPC server: %v", err)
 	}

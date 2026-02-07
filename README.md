@@ -64,7 +64,9 @@ Set environment variables or use defaults:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| HTTP_HOST | 0.0.0.0 | HTTP server bind address |
 | HTTP_PORT | 8080 | HTTP server port |
+| GRPC_HOST | 0.0.0.0 | gRPC server bind address |
 | GRPC_PORT | 9090 | gRPC server port |
 | MYSQL_DSN | (required) | MySQL DSN (e.g. `user:pass@tcp(host:3306)/auth?parseTime=true`) |
 | JWT_SECRET | (default) | Secret for signing JWTs |
@@ -108,8 +110,8 @@ go run main.go serve
 ```
 
 The service starts:
-- HTTP server on port 8080
-- gRPC server on port 9090
+- HTTP server on 0.0.0.0:8080
+- gRPC server on 0.0.0.0:9090
 
 ## Version
 

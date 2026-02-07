@@ -13,7 +13,9 @@ import (
 )
 
 type Config struct {
+	HTTPHost           string
 	HTTPPort           string
+	GRPCHost           string
 	GRPCPort           string
 	MySQLDSN           string
 	JWTSecret          string
@@ -87,7 +89,9 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
+		HTTPHost:           getEnv("HTTP_HOST", "0.0.0.0"),
 		HTTPPort:           getEnv("HTTP_PORT", "8080"),
+		GRPCHost:           getEnv("GRPC_HOST", "0.0.0.0"),
 		GRPCPort:           getEnv("GRPC_PORT", "9090"),
 		MySQLDSN:           mysqlDSN,
 		JWTSecret:          jwtSecret,

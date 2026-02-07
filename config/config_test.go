@@ -104,7 +104,9 @@ func TestLoadRequiresMySQLDSN(t *testing.T) {
 func TestLoadSuccess(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret")
 	t.Setenv("MYSQL_DSN", "user:pass@tcp(db:3306)/authdb?parseTime=true")
+	t.Setenv("HTTP_HOST", "127.0.0.1")
 	t.Setenv("HTTP_PORT", "8081")
+	t.Setenv("GRPC_HOST", "127.0.0.1")
 	t.Setenv("GRPC_PORT", "9091")
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "20")
 	t.Setenv("JWT_REFRESH_TOKEN_TTL", "60")
@@ -120,8 +122,8 @@ func TestLoadSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load failed: %v", err)
 	}
-	if cfg.HTTPPort != "8081" || cfg.GRPCPort != "9091" {
-		t.Fatalf("unexpected ports: %s %s", cfg.HTTPPort, cfg.GRPCPort)
+	if cfg.HTTPHost != "127.0.0.1" || cfg.HTTPPort != "8081" || cfg.GRPCHost != "127.0.0.1" || cfg.GRPCPort != "9091" {
+		t.Fatalf("unexpected host/port: %s:%s %s:%s", cfg.HTTPHost, cfg.HTTPPort, cfg.GRPCHost, cfg.GRPCPort)
 	}
 	if cfg.MySQLDSN != "user:pass@tcp(db:3306)/authdb?parseTime=true" {
 		t.Fatalf("unexpected mysql dsn: %s", cfg.MySQLDSN)
