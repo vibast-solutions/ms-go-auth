@@ -24,6 +24,7 @@ type Config struct {
 	ConfirmTokenTTL    time.Duration
 	ResetTokenTTL      time.Duration
 	PasswordPolicy     PasswordPolicy
+	LogLevel           string
 }
 
 type PasswordPolicy struct {
@@ -100,6 +101,7 @@ func Load() (*Config, error) {
 		ConfirmTokenTTL:    getDurationEnv("CONFIRM_TOKEN_TTL", 24*time.Hour),
 		ResetTokenTTL:      getDurationEnv("RESET_TOKEN_TTL", 1*time.Hour),
 		PasswordPolicy:     loadPasswordPolicy(),
+		LogLevel:           getEnv("LOG_LEVEL", "info"),
 	}, nil
 }
 

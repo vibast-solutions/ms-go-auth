@@ -70,6 +70,7 @@ Set environment variables or use defaults:
 | GRPC_PORT | 9090 | gRPC server port |
 | MYSQL_DSN | (required) | MySQL DSN (e.g. `user:pass@tcp(host:3306)/auth?parseTime=true`) |
 | JWT_SECRET | (default) | Secret for signing JWTs |
+| LOG_LEVEL | info | Log level (trace, debug, info, warn, error, fatal, panic) |
 | JWT_ACCESS_TOKEN_TTL | 15 | Access token TTL in minutes |
 | JWT_REFRESH_TOKEN_TTL | 10080 | Refresh token TTL in minutes (7 days) |
 
