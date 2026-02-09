@@ -1,18 +1,17 @@
 # Auth Microservice - Claude Context
 
 ## Overview
-Authentication microservice built with Go, providing user registration, login, JWT token management, and password reset flows via both HTTP (Echo) and gRPC interfaces.
+Authentication and user management microservice. Provides registration, login, JWT token management, password reset, and account confirmation via HTTP and gRPC. See `development.md` at the repo root for coding conventions.
 
 ## Technology Stack
 - **Framework**: Echo (HTTP), gRPC
 - **CLI**: Cobra
 - **Database**: MySQL with raw `database/sql`
 - **Auth**: JWT (access + refresh tokens), bcrypt password hashing
-- **Dependencies**: See `go.mod`
+- **Logging**: Logrus (JSON, structured)
 
 ## Module
 - **Path**: `github.com/vibast-solutions/ms-go-auth`
-- Importable by other Go modules via `go get github.com/vibast-solutions/ms-go-auth`
 
 ## Directory Structure
 ```
@@ -21,8 +20,9 @@ auth/
 ├── Makefile                # Build targets (native, linux, darwin — arm64/amd64)
 ├── cmd/
 │   ├── root.go             # Cobra root command
-│   ├── serve.go            # Starts HTTP (8080) + gRPC (9090) servers
-│   └── version.go          # Version command (shows git tag + commit hash)
+│   ├── serve.go            # HTTP + gRPC server setup, dependency wiring
+│   ├── logging.go          # Logrus JSON configuration
+│   └── version.go          # Version command (ldflags)
 ├── config/
 │   └── config.go           # Environment-based configuration
 ├── proto/
