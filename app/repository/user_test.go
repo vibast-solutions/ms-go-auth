@@ -8,14 +8,17 @@ import (
 
 	"github.com/vibast-solutions/ms-go-auth/app/entity"
 	"github.com/vibast-solutions/ms-go-auth/app/repository"
+	"github.com/vibast-solutions/ms-go-auth/app/service"
 
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
 const (
 	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
+	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
 	updateUserQuery           = `(?s)UPDATE users SET\s+email = \?,\s+canonical_email = \?,\s+password_hash = \?,\s+is_confirmed = \?,\s+confirm_token = \?,\s+confirm_token_expires_at = \?,\s+reset_token = \?,\s+reset_token_expires_at = \?,\s+updated_at = \?\s+WHERE id = \?`
 	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
+	listUserRolesQuery        = `(?s)SELECT role FROM user_roles WHERE user_id = \? ORDER BY role`
 	findRefreshTokenForUpdate = `(?s)SELECT id, user_id, token, expires_at, created_at\s+FROM refresh_tokens WHERE token = \? FOR UPDATE`
 	deleteRefreshTokenQuery   = `(?s)DELETE FROM refresh_tokens WHERE token = \? AND user_id = \?`
 )
@@ -40,6 +43,10 @@ var refreshTokenColumns = []string{
 	"token",
 	"expires_at",
 	"created_at",
+}
+
+var roleColumns = []string{
+	"role",
 }
 
 func newMockDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock, func()) {
@@ -119,6 +126,9 @@ func TestUserRepository_FindByCanonicalEmail(t *testing.T) {
 			now,
 			now,
 		))
+	mock.ExpectQuery(listUserRolesQuery).
+		WithArgs(uint64(1)).
+		WillReturnRows(sqlmock.NewRows(roleColumns).AddRow(service.RoleUser))
 
 	user, err := repo.FindByCanonicalEmail(context.Background(), "user@example.com")
 	if err != nil {
@@ -126,6 +136,9 @@ func TestUserRepository_FindByCanonicalEmail(t *testing.T) {
 	}
 	if user == nil || user.ID != 1 {
 		t.Fatalf("expected user ID 1, got %+v", user)
+	}
+	if len(user.Roles) != 1 || user.Roles[0] != service.RoleUser {
+		t.Fatalf("expected roles [%q], got %#v", service.RoleUser, user.Roles)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -216,6 +229,25 @@ func TestRefreshTokenRepository_DeleteByToken(t *testing.T) {
 	}
 	if rows != 1 {
 		t.Fatalf("expected 1 row affected, got %d", rows)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestUserRepository_AddRole(t *testing.T) {
+	db, mock, cleanup := newMockDB(t)
+	defer cleanup()
+
+	repo := repository.NewUserRepository(db)
+
+	mock.ExpectExec(insertUserRoleQuery).
+		WithArgs(uint64(1), service.RoleUser).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := repo.AddRole(context.Background(), 1, service.RoleUser); err != nil {
+		t.Fatalf("add role failed: %v", err)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

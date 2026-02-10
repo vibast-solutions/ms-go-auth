@@ -1,16 +1,18 @@
 package http
 
 type RegisterResponse struct {
-	UserID       uint64 `json:"user_id"`
-	Email        string `json:"email"`
-	ConfirmToken string `json:"confirm_token"`
-	Message      string `json:"message"`
+	UserID       uint64   `json:"user_id"`
+	Email        string   `json:"email"`
+	Roles        []string `json:"roles"`
+	ConfirmToken string   `json:"confirm_token"`
+	Message      string   `json:"message"`
 }
 
 type LoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
+	AccessToken  string   `json:"access_token"`
+	RefreshToken string   `json:"refresh_token"`
+	ExpiresIn    int64    `json:"expires_in"`
+	Roles        []string `json:"roles"`
 }
 
 type LogoutResponse struct {
@@ -40,15 +42,17 @@ type GenerateConfirmTokenResponse struct {
 }
 
 type RefreshTokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
+	AccessToken  string   `json:"access_token"`
+	RefreshToken string   `json:"refresh_token"`
+	ExpiresIn    int64    `json:"expires_in"`
+	Roles        []string `json:"roles"`
 }
 
 type ValidateTokenResponse struct {
-	Valid  bool   `json:"valid"`
-	UserID uint64 `json:"user_id,omitempty"`
-	Email  string `json:"email,omitempty"`
+	Valid  bool     `json:"valid"`
+	UserID uint64   `json:"user_id,omitempty"`
+	Email  string   `json:"email,omitempty"`
+	Roles  []string `json:"roles,omitempty"`
 }
 
 type ErrorResponse struct {

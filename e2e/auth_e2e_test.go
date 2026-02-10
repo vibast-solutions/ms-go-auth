@@ -24,6 +24,7 @@ import (
 const (
 	defaultHTTPBase = "http://localhost:18080"
 	defaultGRPCAddr = "localhost:19090"
+	defaultUserRole = "ROLE_USER"
 )
 
 type httpClient struct {
@@ -173,13 +174,17 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 		}
 
 		var regRes struct {
-			ConfirmToken string `json:"confirm_token"`
+			ConfirmToken string   `json:"confirm_token"`
+			Roles        []string `json:"roles"`
 		}
 		if err := json.Unmarshal(body, &regRes); err != nil {
 			fail(t, "register unmarshal failed: %v", err)
 		}
 		if regRes.ConfirmToken == "" {
 			fail(t, "expected confirm_token")
+		}
+		if len(regRes.Roles) != 1 || regRes.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, regRes.Roles)
 		}
 		state.confirmToken = regRes.ConfirmToken
 	})
@@ -260,14 +265,18 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 		}
 
 		var loginRes struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
+			AccessToken  string   `json:"access_token"`
+			RefreshToken string   `json:"refresh_token"`
+			Roles        []string `json:"roles"`
 		}
 		if err := json.Unmarshal(body, &loginRes); err != nil {
 			fail(t, "login unmarshal failed: %v", err)
 		}
 		if loginRes.AccessToken == "" || loginRes.RefreshToken == "" {
 			fail(t, "expected access and refresh tokens")
+		}
+		if len(loginRes.Roles) != 1 || loginRes.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, loginRes.Roles)
 		}
 		state.accessToken = loginRes.AccessToken
 		state.refreshToken = loginRes.RefreshToken
@@ -280,8 +289,18 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			fail(t, "validate status: %d body: %s", resp.StatusCode, string(body))
 		}
-		if !bytes.Contains(body, []byte(`"valid":true`)) {
+		var validateRes struct {
+			Valid bool     `json:"valid"`
+			Roles []string `json:"roles"`
+		}
+		if err := json.Unmarshal(body, &validateRes); err != nil {
+			fail(t, "validate unmarshal failed: %v", err)
+		}
+		if !validateRes.Valid {
 			fail(t, "expected valid=true, got %s", string(body))
+		}
+		if len(validateRes.Roles) != 1 || validateRes.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, validateRes.Roles)
 		}
 	})
 
@@ -305,14 +324,18 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 			fail(t, "refresh status: %d body: %s", resp.StatusCode, string(body))
 		}
 		var refreshRes struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
+			AccessToken  string   `json:"access_token"`
+			RefreshToken string   `json:"refresh_token"`
+			Roles        []string `json:"roles"`
 		}
 		if err := json.Unmarshal(body, &refreshRes); err != nil {
 			fail(t, "refresh unmarshal failed: %v", err)
 		}
 		if refreshRes.RefreshToken == "" {
 			fail(t, "expected new refresh token")
+		}
+		if len(refreshRes.Roles) != 1 || refreshRes.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, refreshRes.Roles)
 		}
 		state.newRefreshToken = refreshRes.RefreshToken
 	})
@@ -445,11 +468,15 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 			fail(t, "login with new password status: %d body: %s", resp.StatusCode, string(body))
 		}
 		var loginRes2 struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
+			AccessToken  string   `json:"access_token"`
+			RefreshToken string   `json:"refresh_token"`
+			Roles        []string `json:"roles"`
 		}
 		if err := json.Unmarshal(body, &loginRes2); err != nil {
 			fail(t, "login2 unmarshal failed: %v", err)
+		}
+		if len(loginRes2.Roles) != 1 || loginRes2.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, loginRes2.Roles)
 		}
 		state.accessToken2 = loginRes2.AccessToken
 		state.refreshToken2 = loginRes2.RefreshToken
@@ -540,6 +567,9 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 		if grpcRes == nil || !grpcRes.Valid {
 			fail(t, "expected grpc validate to return valid=true")
 		}
+		if len(grpcRes.Roles) != 1 || grpcRes.Roles[0] != defaultUserRole {
+			fail(t, "expected grpc validate roles [%s], got %#v", defaultUserRole, grpcRes.Roles)
+		}
 
 		grpcRes, err = grpcClient.ValidateToken(context.Background(), &types.ValidateTokenRequest{
 			AccessToken: "invalid",
@@ -628,6 +658,9 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 		if regRes.ConfirmToken == "" || regRes.UserId == 0 {
 			fail(t, "expected confirm_token and user_id")
 		}
+		if len(regRes.Roles) != 1 || regRes.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, regRes.Roles)
+		}
 		state.confirmToken = regRes.ConfirmToken
 		state.userID = regRes.UserId
 	})
@@ -683,6 +716,9 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 		if loginRes.AccessToken == "" || loginRes.RefreshToken == "" {
 			fail(t, "expected tokens")
 		}
+		if len(loginRes.Roles) != 1 || loginRes.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, loginRes.Roles)
+		}
 		state.accessToken = loginRes.AccessToken
 		state.refreshToken = loginRes.RefreshToken
 	})
@@ -696,6 +732,9 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 		}
 		if refreshRes.RefreshToken == "" {
 			fail(t, "expected new refresh token")
+		}
+		if len(refreshRes.Roles) != 1 || refreshRes.Roles[0] != defaultUserRole {
+			fail(t, "expected roles [%s], got %#v", defaultUserRole, refreshRes.Roles)
 		}
 		state.oldRefreshToken = state.refreshToken
 		state.refreshToken = refreshRes.RefreshToken

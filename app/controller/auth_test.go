@@ -26,6 +26,8 @@ const (
 	findByIDQuery             = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE id = \?`
 	findRefreshTokenForUpdate = `(?s)SELECT id, user_id, token, expires_at, created_at\s+FROM refresh_tokens WHERE token = \? FOR UPDATE`
 	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
+	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
+	listUserRolesQuery        = `(?s)SELECT role FROM user_roles WHERE user_id = \? ORDER BY role`
 )
 
 var userColumns = []string{
@@ -40,6 +42,10 @@ var userColumns = []string{
 	"reset_token_expires_at",
 	"created_at",
 	"updated_at",
+}
+
+var roleColumns = []string{
+	"role",
 }
 
 func newControllerWithMock(t *testing.T) (*controller.AuthController, sqlmock.Sqlmock, func()) {
@@ -85,6 +91,17 @@ func newJSONRequest(t *testing.T, method, path string, body any) (*http.Request,
 	return req, httptest.NewRecorder()
 }
 
+func expectUserRolesQuery(mock sqlmock.Sqlmock, userID uint64, roles ...string) {
+	rows := sqlmock.NewRows(roleColumns)
+	for _, role := range roles {
+		rows.AddRow(role)
+	}
+
+	mock.ExpectQuery(listUserRolesQuery).
+		WithArgs(userID).
+		WillReturnRows(rows)
+}
+
 func TestRegister_Success(t *testing.T) {
 	controllerWithMock, mock, cleanup := newControllerWithMock(t)
 	defer cleanup()
@@ -95,9 +112,14 @@ func TestRegister_Success(t *testing.T) {
 	mock.ExpectQuery(findByCanonicalEmailQuery).
 		WithArgs(canonical).
 		WillReturnRows(sqlmock.NewRows(userColumns))
+	mock.ExpectBegin()
 	mock.ExpectExec(insertUserQuery).
 		WithArgs(email, canonical, sqlmock.AnyArg(), false, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(insertUserRoleQuery).
+		WithArgs(uint64(1), service.RoleUser).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 
 	req, rec := newJSONRequest(t, http.MethodPost, "/auth/register", map[string]string{
 		"email":    email,
@@ -122,6 +144,10 @@ func TestRegister_Success(t *testing.T) {
 	}
 	if body["confirm_token"] == "" {
 		t.Fatalf("expected confirm_token to be set")
+	}
+	roles, ok := body["roles"].([]any)
+	if !ok || len(roles) != 1 || roles[0] != service.RoleUser {
+		t.Fatalf("expected roles [%q], got %#v", service.RoleUser, body["roles"])
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -244,6 +270,7 @@ func TestChangePassword_Mismatch(t *testing.T) {
 			now,
 			now,
 		))
+	expectUserRolesQuery(mock, 1, service.RoleUser)
 
 	req, rec := newJSONRequest(t, http.MethodPost, "/auth/change-password", map[string]string{
 		"old_password": "wrong",
@@ -576,6 +603,7 @@ func TestRegister_DuplicateUser(t *testing.T) {
 			now,
 			now,
 		))
+	expectUserRolesQuery(mock, 1, service.RoleUser)
 
 	req, rec := newJSONRequest(t, http.MethodPost, "/auth/register", map[string]string{
 		"email":    email,

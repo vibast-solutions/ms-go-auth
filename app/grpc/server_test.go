@@ -20,6 +20,8 @@ import (
 const (
 	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
 	findByConfirmTokenQuery   = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE confirm_token = \?`
+	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
+	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
 )
 
 var userColumns = []string{
@@ -86,6 +88,41 @@ func TestRegister_WeakPassword(t *testing.T) {
 	}
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("expected InvalidArgument, got %v", status.Code(err))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestRegister_SuccessIncludesRoles(t *testing.T) {
+	server, mock, cleanup := newGRPCServerWithMock(t)
+	defer cleanup()
+
+	email := "user@example.com"
+	canonical := service.CanonicalizeEmail(email)
+
+	mock.ExpectQuery(findByCanonicalEmailQuery).
+		WithArgs(canonical).
+		WillReturnRows(sqlmock.NewRows(userColumns))
+	mock.ExpectBegin()
+	mock.ExpectExec(insertUserQuery).
+		WithArgs(email, canonical, sqlmock.AnyArg(), false, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(insertUserRoleQuery).
+		WithArgs(uint64(1), service.RoleUser).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	res, err := server.Register(context.Background(), &types.RegisterRequest{
+		Email:    email,
+		Password: "password",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.GetRoles()) != 1 || res.GetRoles()[0] != service.RoleUser {
+		t.Fatalf("expected roles [%q], got %#v", service.RoleUser, res.GetRoles())
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

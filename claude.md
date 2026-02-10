@@ -51,21 +51,22 @@ auth/
 ```
 
 ## Database Schema
-Two tables in MySQL database `auth`:
-- `users`: id, email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, reset_token, reset_token_expires_at, created_at, updated_at
+Three tables in MySQL database `auth`:
+- `users`: id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, reset_token, reset_token_expires_at, created_at, updated_at
 - `refresh_tokens`: id, user_id (FK), token, expires_at, created_at
+- `user_roles`: user_id (FK), role (composite PK with user_id)
 
 ## API Endpoints (HTTP)
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /auth/register | No | Create user, returns confirm_token |
-| POST | /auth/login | No | Returns access_token + refresh_token |
+| POST | /auth/register | No | Create user, returns confirm_token + roles |
+| POST | /auth/login | No | Returns access_token + refresh_token + roles |
 | POST | /auth/refresh-token | No | Exchange refresh token for new token pair (rotation) |
 | POST | /auth/generate-confirm-token | No | Get/regenerate confirm token for unconfirmed account |
 | POST | /auth/logout | Yes | Invalidates refresh token |
 | POST | /auth/change-password | Yes | Change password (requires old password) |
 | POST | /auth/confirm-account | No | Confirm account with token |
-| POST | /auth/validate-token | No | Validate JWT access token, returns user_id + email (no DB call) |
+| POST | /auth/validate-token | No | Validate JWT access token, returns user_id + email + roles (no DB call) |
 | POST | /auth/request-password-reset | No | Get/generate reset token (reuses valid token) |
 | POST | /auth/reset-password | No | Reset password with token |
 
@@ -84,7 +85,8 @@ Additional RPCs: `ValidateToken` (validates JWT, returns user info), `RefreshTok
 - `RESET_TOKEN_TTL` (default: 1 hour)
 
 ## Key Implementation Details
-- Access tokens are JWTs with user_id and email in claims; validated via signature only (no DB call)
+- Access tokens are JWTs with user_id, email, and roles in claims; validated via signature only (no DB call)
+- Registered users receive default role `ROLE_USER` in `user_roles`
 - Refresh tokens are UUIDs stored in database
 - Token refresh uses rotation: old refresh token is deleted, new pair is issued
 - Confirm token regeneration: returns existing valid token or creates new one; rejects if account already confirmed

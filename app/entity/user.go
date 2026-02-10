@@ -8,6 +8,7 @@ import (
 type User struct {
 	ID                    uint64
 	Email                 string
+	Roles                 []string
 	CanonicalEmail        string
 	PasswordHash          string
 	IsConfirmed           bool

@@ -29,9 +29,14 @@ var (
 	ErrWeakPassword            = errors.New("password does not meet policy requirements")
 )
 
+const (
+	RoleUser = "ROLE_USER"
+)
+
 type Claims struct {
-	UserID uint64 `json:"user_id"`
-	Email  string `json:"email"`
+	UserID uint64   `json:"user_id"`
+	Email  string   `json:"email"`
+	Roles  []string `json:"roles"`
 	jwt.RegisteredClaims
 }
 
@@ -93,7 +98,24 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (*dt
 		UpdatedAt: now,
 	}
 
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	txUserRepo := s.userRepo.WithTx(tx)
+	if err := txUserRepo.Create(ctx, user); err != nil {
+		return nil, err
+	}
+
+	if err := txUserRepo.AddRole(ctx, user.ID, RoleUser); err != nil {
+		return nil, err
+	}
+
+	user.Roles = []string{RoleUser}
+
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -140,6 +162,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string, customT
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    int64(effectiveTTL.Seconds()),
+		Roles:        user.Roles,
 	}, nil
 }
 
@@ -351,6 +374,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
 		ExpiresIn:    int64(s.cfg.JWTAccessTokenTTL.Seconds()),
+		Roles:        user.Roles,
 	}, nil
 }
 
@@ -381,6 +405,7 @@ func (s *AuthService) generateAccessToken(user *entity.User, ttl time.Duration) 
 	claims := &Claims{
 		UserID: user.ID,
 		Email:  user.Email,
+		Roles:  user.Roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

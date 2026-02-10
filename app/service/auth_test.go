@@ -39,6 +39,9 @@ var (
 		"expires_at",
 		"created_at",
 	}
+	roleColumns = []string{
+		"role",
+	}
 )
 
 const (
@@ -47,6 +50,8 @@ const (
 	findByResetTokenQuery     = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE reset_token = \?`
 	findRefreshTokenForUpdate = `(?s)SELECT id, user_id, token, expires_at, created_at\s+FROM refresh_tokens WHERE token = \? FOR UPDATE`
 	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
+	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
+	listUserRolesQuery        = `(?s)SELECT role FROM user_roles WHERE user_id = \? ORDER BY role`
 	updateUserQuery           = `(?s)UPDATE users SET\s+email = \?,\s+canonical_email = \?,\s+password_hash = \?,\s+is_confirmed = \?,\s+confirm_token = \?,\s+confirm_token_expires_at = \?,\s+reset_token = \?,\s+reset_token_expires_at = \?,\s+updated_at = \?\s+WHERE id = \?`
 	insertRefreshTokenQuery   = `(?s)INSERT INTO refresh_tokens \(user_id, token, expires_at, created_at\)\s+VALUES \(\?, \?, \?, \?\)`
 	deleteRefreshTokenQuery   = `(?s)DELETE FROM refresh_tokens WHERE token = \? AND user_id = \?`
@@ -89,6 +94,17 @@ func newServiceWithMockAndPolicy(t *testing.T, policy config.PasswordPolicy) (*s
 	return svc, mock, func() { _ = db.Close() }
 }
 
+func expectUserRolesQuery(mock sqlmock.Sqlmock, userID uint64, roles ...string) {
+	rows := sqlmock.NewRows(roleColumns)
+	for _, role := range roles {
+		rows.AddRow(role)
+	}
+
+	mock.ExpectQuery(listUserRolesQuery).
+		WithArgs(userID).
+		WillReturnRows(rows)
+}
+
 func TestAuthService_Register_CreatesUser(t *testing.T) {
 	svc, mock, cleanup := newServiceWithMock(t)
 	defer cleanup()
@@ -99,9 +115,14 @@ func TestAuthService_Register_CreatesUser(t *testing.T) {
 	mock.ExpectQuery(findByCanonicalEmailQuery).
 		WithArgs(canonical).
 		WillReturnRows(sqlmock.NewRows(userColumns))
+	mock.ExpectBegin()
 	mock.ExpectExec(insertUserQuery).
 		WithArgs(email, canonical, sqlmock.AnyArg(), false, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(insertUserRoleQuery).
+		WithArgs(uint64(1), service.RoleUser).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 
 	res, err := svc.Register(context.Background(), email, "password")
 	if err != nil {
@@ -112,6 +133,9 @@ func TestAuthService_Register_CreatesUser(t *testing.T) {
 	}
 	if res.ConfirmToken == "" {
 		t.Fatalf("expected confirm token to be set")
+	}
+	if len(res.User.Roles) != 1 || res.User.Roles[0] != service.RoleUser {
+		t.Fatalf("expected default role %q, got %#v", service.RoleUser, res.User.Roles)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -170,6 +194,7 @@ func TestAuthService_Login_ReturnsTokens(t *testing.T) {
 			now,
 			now,
 		))
+	expectUserRolesQuery(mock, 1, service.RoleUser)
 	mock.ExpectExec(insertRefreshTokenQuery).
 		WithArgs(uint64(1), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -183,6 +208,9 @@ func TestAuthService_Login_ReturnsTokens(t *testing.T) {
 	}
 	if res.ExpiresIn <= 0 {
 		t.Fatalf("expected positive expires_in")
+	}
+	if len(res.Roles) != 1 || res.Roles[0] != service.RoleUser {
+		t.Fatalf("expected roles to contain %q, got %#v", service.RoleUser, res.Roles)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -225,6 +253,7 @@ func TestAuthService_RefreshToken_RotatesToken(t *testing.T) {
 			now,
 			now,
 		))
+	expectUserRolesQuery(mock, 1, service.RoleUser)
 
 	mock.ExpectExec(deleteRefreshTokenQuery).
 		WithArgs(oldToken, uint64(1)).
@@ -240,6 +269,9 @@ func TestAuthService_RefreshToken_RotatesToken(t *testing.T) {
 	}
 	if res.AccessToken == "" || res.RefreshToken == "" {
 		t.Fatalf("expected rotated tokens")
+	}
+	if len(res.Roles) != 1 || res.Roles[0] != service.RoleUser {
+		t.Fatalf("expected roles to contain %q, got %#v", service.RoleUser, res.Roles)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -300,6 +332,7 @@ func TestAuthService_ChangePassword_RevokesRefreshTokens(t *testing.T) {
 			now,
 			now,
 		))
+	expectUserRolesQuery(mock, 1, service.RoleUser)
 	mock.ExpectExec(updateUserQuery).
 		WithArgs(email, canonical, sqlmock.AnyArg(), true, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -378,6 +411,7 @@ func TestAuthService_RequestPasswordReset_ReusesValidToken(t *testing.T) {
 			now,
 			now,
 		))
+	expectUserRolesQuery(mock, 1, service.RoleUser)
 
 	res, err := svc.RequestPasswordReset(context.Background(), email)
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 
 type DBTX interface {
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
 }
 
@@ -78,6 +79,11 @@ func (r *UserRepository) FindByCanonicalEmail(ctx context.Context, canonicalEmai
 	if err != nil {
 		return nil, err
 	}
+	roles, err := r.ListRolesByUserID(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	user.Roles = roles
 	return user, nil
 }
 
@@ -107,7 +113,42 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User,
 	if err != nil {
 		return nil, err
 	}
+	roles, err := r.ListRolesByUserID(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	user.Roles = roles
 	return user, nil
+}
+
+func (r *UserRepository) AddRole(ctx context.Context, userID uint64, role string) error {
+	query := `INSERT INTO user_roles (user_id, role) VALUES (?, ?)`
+	_, err := r.db.ExecContext(ctx, query, userID, role)
+	return err
+}
+
+func (r *UserRepository) ListRolesByUserID(ctx context.Context, userID uint64) ([]string, error) {
+	query := `SELECT role FROM user_roles WHERE user_id = ? ORDER BY role`
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	roles := make([]string, 0)
+	for rows.Next() {
+		var role string
+		if err = rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		roles = append(roles, role)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return roles, nil
 }
 
 func (r *UserRepository) FindByConfirmToken(ctx context.Context, token string) (*entity.User, error) {

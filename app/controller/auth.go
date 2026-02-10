@@ -54,6 +54,7 @@ func (c *AuthController) Register(ctx echo.Context) error {
 	return ctx.JSON(http.StatusCreated, dto.RegisterResponse{
 		UserID:       result.User.ID,
 		Email:        result.User.Email,
+		Roles:        result.User.Roles,
 		ConfirmToken: result.ConfirmToken,
 		Message:      "registration successful, please confirm your account",
 	})
@@ -100,6 +101,7 @@ func (c *AuthController) Login(ctx echo.Context) error {
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,
 		ExpiresIn:    result.ExpiresIn,
+		Roles:        result.Roles,
 	})
 }
 
@@ -195,6 +197,7 @@ func (c *AuthController) RefreshToken(ctx echo.Context) error {
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,
 		ExpiresIn:    result.ExpiresIn,
+		Roles:        result.Roles,
 	})
 }
 
@@ -223,6 +226,7 @@ func (c *AuthController) ValidateToken(ctx echo.Context) error {
 		Valid:  true,
 		UserID: claims.UserID,
 		Email:  claims.Email,
+		Roles:  claims.Roles,
 	})
 }
 

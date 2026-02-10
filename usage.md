@@ -10,7 +10,7 @@ You are building a microservice that depends on the auth microservice. This docu
 ## Authentication Model
 
 The auth service uses a two-token system:
-- **Access token**: A short-lived JWT (default 15 minutes). Include it in requests to protected endpoints as `Authorization: Bearer <access_token>`. The JWT payload contains `user_id` (uint64) and `email` (string).
+- **Access token**: A short-lived JWT (default 15 minutes). Include it in requests to protected endpoints as `Authorization: Bearer <access_token>`. The JWT payload contains `user_id` (uint64), `email` (string), and `roles` ([]string).
 - **Refresh token**: A long-lived opaque UUID (default 7 days), stored in the database. Used to obtain new access tokens via `POST /auth/refresh-token`. Token rotation is enforced: each refresh issues a new token pair and invalidates the old refresh token.
 
 Users must confirm their account before they can log in. Registration returns a `confirm_token` that must be submitted to confirm the account.
@@ -42,7 +42,7 @@ When your service receives a request with a JWT access token and needs to verify
 
 ```
 Request:  { access_token: "the-jwt-string" }
-Response: { valid: true/false, user_id: 123, email: "user@example.com" }
+Response: { valid: true/false, user_id: 123, email: "user@example.com", roles: ["ROLE_USER"] }
 ```
 
 If `valid` is `false`, reject the request. If `valid` is `true`, use `user_id` and `email` to identify the caller.
@@ -91,7 +91,7 @@ Create a new user. The response includes a `confirm_token` that must be used to 
 
 ```
 Request:  {"email": "user@example.com", "password": "secret"}
-Response: {"user_id": 1, "email": "user@example.com", "confirm_token": "uuid", "message": "..."}
+Response: {"user_id": 1, "email": "user@example.com", "roles": ["ROLE_USER"], "confirm_token": "uuid", "message": "..."}
 Status:   201 Created
 Errors:   400 (missing fields), 409 (email taken)
 ```
@@ -121,7 +121,7 @@ Authenticate a confirmed user. Returns access and refresh tokens.
 
 ```
 Request:  {"email": "user@example.com", "password": "secret"}
-Response: {"access_token": "jwt", "refresh_token": "uuid", "expires_in": 900}
+Response: {"access_token": "jwt", "refresh_token": "uuid", "expires_in": 900, "roles": ["ROLE_USER"]}
 Status:   200 OK
 Errors:   400 (missing fields), 401 (wrong credentials), 403 (not confirmed)
 ```
@@ -133,7 +133,7 @@ Exchange a refresh token for a new access token and refresh token. The old refre
 
 ```
 Request:  {"refresh_token": "uuid-from-login"}
-Response: {"access_token": "new-jwt", "refresh_token": "new-uuid", "expires_in": 900}
+Response: {"access_token": "new-jwt", "refresh_token": "new-uuid", "expires_in": 900, "roles": ["ROLE_USER"]}
 Status:   200 OK
 Errors:   400 (missing refresh_token), 401 (invalid or expired refresh token)
 ```
@@ -175,7 +175,7 @@ Validate a JWT access token and get the associated user info. This is the HTTP e
 
 ```
 Request:  {"access_token": "jwt-string"}
-Response: {"valid": true, "user_id": 1, "email": "user@example.com"}
+Response: {"valid": true, "user_id": 1, "email": "user@example.com", "roles": ["ROLE_USER"]}
 Status:   200 OK (always, even for invalid tokens)
 ```
 
@@ -207,7 +207,7 @@ Errors:   400 (invalid/expired token, missing fields)
 ### Service-to-service token validation flow
 1. Receive a JWT access token from the caller (e.g., forwarded from the UI)
 2. Call `ValidateToken` via gRPC or `POST /auth/validate-token` via HTTP
-3. If `valid` is `true`, use the returned `user_id` and `email` to identify the caller
+3. If `valid` is `true`, use the returned `user_id`, `email`, and `roles` to identify the caller
 4. If `valid` is `false`, reject the request
 
 ### Password reset flow
@@ -223,6 +223,7 @@ The access token is an HS256-signed JWT with this payload:
 {
   "user_id": 1,
   "email": "user@example.com",
+  "roles": ["ROLE_USER"],
   "sub": "user@example.com",
   "exp": 1700000000,
   "iat": 1699999100

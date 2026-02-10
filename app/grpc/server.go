@@ -50,6 +50,7 @@ func (s *AuthServer) Register(ctx context.Context, req *types.RegisterRequest) (
 	return &types.RegisterResponse{
 		UserId:       result.User.ID,
 		Email:        result.User.Email,
+		Roles:        result.User.Roles,
 		ConfirmToken: result.ConfirmToken,
 		Message:      "registration successful, please confirm your account",
 	}, nil
@@ -89,6 +90,7 @@ func (s *AuthServer) Login(ctx context.Context, req *types.LoginRequest) (*types
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,
 		ExpiresIn:    result.ExpiresIn,
+		Roles:        result.Roles,
 	}, nil
 }
 
@@ -284,6 +286,7 @@ func (s *AuthServer) ValidateToken(_ context.Context, req *types.ValidateTokenRe
 		Valid:  true,
 		UserId: claims.UserID,
 		Email:  claims.Email,
+		Roles:  claims.Roles,
 	}, nil
 }
 
@@ -309,5 +312,6 @@ func (s *AuthServer) RefreshToken(ctx context.Context, req *types.RefreshTokenRe
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,
 		ExpiresIn:    result.ExpiresIn,
+		Roles:        result.Roles,
 	}, nil
 }

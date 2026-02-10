@@ -29,3 +29,11 @@ CREATE TABLE refresh_tokens (
     INDEX idx_refresh_tokens_user_id (user_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE user_roles (
+    user_id BIGINT UNSIGNED NOT NULL,
+    role VARCHAR(64) NOT NULL,
+    PRIMARY KEY (user_id, role),
+    INDEX idx_user_roles_role (role),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);

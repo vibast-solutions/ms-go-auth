@@ -118,6 +118,7 @@ func TestRequireAuth_SetsContextOnValidToken(t *testing.T) {
 	claims := &service.Claims{
 		UserID: 1,
 		Email:  "user@example.com",
+		Roles:  []string{service.RoleUser},
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -143,6 +144,10 @@ func TestRequireAuth_SetsContextOnValidToken(t *testing.T) {
 		email, ok := c.Get("user_email").(string)
 		if !ok || email != "user@example.com" {
 			t.Fatalf("expected user_email user@example.com, got %v", c.Get("user_email"))
+		}
+		roles, ok := c.Get("user_roles").([]string)
+		if !ok || len(roles) != 1 || roles[0] != service.RoleUser {
+			t.Fatalf("expected user_roles [%q], got %v", service.RoleUser, c.Get("user_roles"))
 		}
 		return c.NoContent(http.StatusOK)
 	})
