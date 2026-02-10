@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	defaultHTTPBase = "http://localhost:8080"
-	defaultGRPCAddr = "localhost:9090"
+	defaultHTTPBase = "http://localhost:18080"
+	defaultGRPCAddr = "localhost:19090"
 )
 
 type httpClient struct {

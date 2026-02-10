@@ -16,4 +16,6 @@ trap cleanup EXIT
 
 echo "Running E2E tests..."
 cd "$ROOT_DIR"
+AUTH_HTTP_URL="${AUTH_HTTP_URL:-http://localhost:18080}" \
+AUTH_GRPC_ADDR="${AUTH_GRPC_ADDR:-localhost:19090}" \
 go test ./e2e -v -tags e2e

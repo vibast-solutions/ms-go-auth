@@ -21,7 +21,7 @@ services:
     environment:
       HTTP_PORT: 8080
       GRPC_PORT: 9090
-      MYSQL_DSN: root:root@tcp(mysql:13306)/auth?parseTime=true
+      MYSQL_DSN: root:root@tcp(mysql:3306)/auth?parseTime=true
       JWT_SECRET: test-secret
       PASSWORD_REQUIRE_SPECIAL: "false"
     ports:
