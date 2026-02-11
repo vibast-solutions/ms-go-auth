@@ -4,6 +4,8 @@
 
 Authentication microservice providing user registration, login, JWT token management, and password flows via HTTP and gRPC.
 
+All HTTP routes and all gRPC methods require a valid internal API key from a trusted service caller (`X-API-Key` for HTTP, `x-api-key` metadata for gRPC).
+
 ## Features
 
 - User registration with email confirmation
@@ -66,6 +68,18 @@ CREATE TABLE user_roles (
     PRIMARY KEY (user_id, role),
     INDEX idx_user_roles_role (role),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE internal_api_keys (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    service_name VARCHAR(255) NOT NULL,
+    key_hash VARCHAR(255) NOT NULL,
+    allowed_access_json TEXT NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE INDEX idx_internal_api_keys_key_hash (key_hash)
 );
 ```
 
@@ -307,6 +321,28 @@ Validate a JWT access token and get the associated user info. Intended for servi
 }
 ```
 
+### POST /auth/internal/access
+Validate an internal service API key and return access rights for the inspected key.
+
+Requires `X-API-Key` header.
+
+**Request:**
+```json
+{
+  "api_key": "key-to-inspect"
+}
+```
+
+**Response (200):**
+```json
+{
+  "service_name": "profile-service",
+  "allowed_access": ["auth", "notifications"]
+}
+```
+
+**Errors:** 400 (missing `api_key`), 401 (missing/invalid caller API key), 404 (inspected API key not found)
+
 ### POST /auth/reset-password
 Reset password using token.
 
@@ -334,36 +370,49 @@ grpcurl -plaintext -d '{"email":"user@example.com","password":"secret"}' \
 # Register a user
 curl -X POST http://localhost:8080/auth/register \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
   -d '{"email":"test@example.com","password":"password123"}'
 
 # Confirm account (use token from register response)
 curl -X POST http://localhost:8080/auth/confirm-account \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
   -d '{"token":"<confirm-token>"}'
 
 # Generate a new confirm token (if token expired)
 curl -X POST http://localhost:8080/auth/generate-confirm-token \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
   -d '{"email":"test@example.com"}'
 
 # Login
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
   -d '{"email":"test@example.com","password":"password123"}'
 
 # Refresh tokens (use refresh_token from login response)
 curl -X POST http://localhost:8080/auth/refresh-token \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
   -d '{"refresh_token":"<refresh-token>"}'
 
 # Validate a token (service-to-service)
 curl -X POST http://localhost:8080/auth/validate-token \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
   -d '{"access_token":"<access-token>"}'
+
+# Validate internal API key rights
+curl -X POST http://localhost:8080/auth/internal/access \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
+  -d '{"api_key":"<key-to-inspect>"}'
 
 # Change password (use access_token from login response)
 curl -X POST http://localhost:8080/auth/change-password \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: <caller-api-key>" \
   -H "Authorization: Bearer <access-token>" \
   -d '{"old_password":"password123","new_password":"newpassword"}'
 ```
@@ -390,4 +439,20 @@ auth/
     │   └── http/        # HTTP request/response DTOs
     ├── types/           # Generated protobuf types
     └── middleware/      # HTTP middleware
+```
+
+## API Key Commands
+
+```bash
+# Generate key for a service (fails if service has an active key)
+./build/auth-service apikey generate profile-service
+
+# Allow service -> target service access
+./build/auth-service apikey allow profile-service notifications
+
+# Deactivate all active keys for a service
+./build/auth-service apikey deactivate profile-service
+
+# Regenerate key and choose old key grace period interactively (default 60 minutes)
+./build/auth-service apikey regenerate profile-service
 ```

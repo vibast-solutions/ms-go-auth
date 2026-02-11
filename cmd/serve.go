@@ -52,7 +52,8 @@ func runServe(_ *cobra.Command, _ []string) {
 
 	userRepo := repository.NewUserRepository(db)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshTokenRepo, cfg)
+	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
+	authService := service.NewAuthService(db, userRepo, refreshTokenRepo, internalAPIKeyRepo, cfg)
 
 	go startGRPCServer(cfg, authService)
 
@@ -97,6 +98,9 @@ func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
 
 	authController := controller.NewAuthController(authService)
 	authMiddleware := middleware.NewAuthMiddleware(authService)
+	apiKeyMiddleware := middleware.NewAPIKeyMiddleware(authService)
+
+	e.Use(apiKeyMiddleware.RequireAPIKey)
 
 	auth := e.Group("/auth")
 	auth.POST("/register", authController.Register)
@@ -107,6 +111,7 @@ func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
 	auth.POST("/refresh-token", authController.RefreshToken)
 	auth.POST("/generate-confirm-token", authController.GenerateConfirmToken)
 	auth.POST("/validate-token", authController.ValidateToken)
+	auth.POST("/internal/access", authController.InternalAccess)
 
 	authProtected := auth.Group("")
 	authProtected.Use(authMiddleware.RequireAuth)
@@ -127,7 +132,10 @@ func startGRPCServer(cfg *config.Config, authService *service.AuthService) {
 		logrus.WithError(err).Fatal("Failed to listen on gRPC port")
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(authgrpc.APIKeyUnaryInterceptor(authService)),
+		grpc.StreamInterceptor(authgrpc.APIKeyStreamInterceptor(authService)),
+	)
 	defer grpcServer.GracefulStop()
 	authServer := authgrpc.NewAuthServer(authService)
 	types.RegisterAuthServiceServer(grpcServer, authServer)

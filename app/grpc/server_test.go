@@ -22,6 +22,7 @@ const (
 	findByConfirmTokenQuery   = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE confirm_token = \?`
 	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
 	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
+	findInternalByHashQuery   = `(?s)SELECT id, service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at\s+FROM internal_api_keys\s+WHERE key_hash = \? AND is_active = 1 AND expires_at > NOW\(\)\s+ORDER BY id DESC\s+LIMIT 1`
 )
 
 var userColumns = []string{
@@ -34,6 +35,17 @@ var userColumns = []string{
 	"confirm_token_expires_at",
 	"reset_token",
 	"reset_token_expires_at",
+	"created_at",
+	"updated_at",
+}
+
+var internalAPIKeyColumns = []string{
+	"id",
+	"service_name",
+	"key_hash",
+	"allowed_access_json",
+	"is_active",
+	"expires_at",
 	"created_at",
 	"updated_at",
 }
@@ -63,7 +75,8 @@ func newGRPCServerWithMock(t *testing.T) (*authgrpc.AuthServer, sqlmock.Sqlmock,
 
 	userRepo := repository.NewUserRepository(db)
 	refreshRepo := repository.NewRefreshTokenRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, cfg)
+	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
+	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
 
 	return authgrpc.NewAuthServer(authService), mock, func() { _ = db.Close() }
 }
@@ -235,6 +248,78 @@ func TestValidateToken_InvalidToken(t *testing.T) {
 	}
 	if res == nil || res.Valid {
 		t.Fatalf("expected Valid=false response")
+	}
+}
+
+func TestValidateInternalAccess_MissingAPIKey(t *testing.T) {
+	server, _, cleanup := newGRPCServerWithMock(t)
+	defer cleanup()
+
+	_, err := server.ValidateInternalAccess(context.Background(), &types.ValidateInternalAccessRequest{})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got %v", status.Code(err))
+	}
+}
+
+func TestValidateInternalAccess_InvalidAPIKey(t *testing.T) {
+	server, mock, cleanup := newGRPCServerWithMock(t)
+	defer cleanup()
+
+	mock.ExpectQuery(findInternalByHashQuery).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns))
+
+	_, err := server.ValidateInternalAccess(context.Background(), &types.ValidateInternalAccessRequest{
+		ApiKey: "invalid",
+	})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", status.Code(err))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestValidateInternalAccess_Success(t *testing.T) {
+	server, mock, cleanup := newGRPCServerWithMock(t)
+	defer cleanup()
+
+	now := time.Now()
+	mock.ExpectQuery(findInternalByHashQuery).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns).AddRow(
+			uint64(1),
+			"profile-service",
+			"hash",
+			`["auth","notifications"]`,
+			true,
+			now.Add(time.Hour),
+			now,
+			now,
+		))
+
+	res, err := server.ValidateInternalAccess(context.Background(), &types.ValidateInternalAccessRequest{
+		ApiKey: "valid",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.ServiceName != "profile-service" {
+		t.Fatalf("expected service_name profile-service, got %q", res.ServiceName)
+	}
+	if len(res.AllowedAccess) != 2 {
+		t.Fatalf("expected allowed access entries, got %#v", res.AllowedAccess)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
 	}
 }
 

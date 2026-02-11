@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -287,6 +288,28 @@ func (s *AuthServer) ValidateToken(_ context.Context, req *types.ValidateTokenRe
 		UserId: claims.UserID,
 		Email:  claims.Email,
 		Roles:  claims.Roles,
+	}, nil
+}
+
+func (s *AuthServer) ValidateInternalAccess(ctx context.Context, req *types.ValidateInternalAccessRequest) (*types.ValidateInternalAccessResponse, error) {
+	if strings.TrimSpace(req.ApiKey) == "" {
+		logrus.Debug("Validate internal access validation failed (grpc)")
+		return nil, status.Error(codes.InvalidArgument, "api_key is required")
+	}
+
+	result, err := s.authService.ValidateInternalAPIKey(ctx, req.ApiKey)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidInternalAPIKey) {
+			logrus.Debug("Validate internal access failed: inspected api key not found (grpc)")
+			return nil, status.Error(codes.NotFound, "api key not found")
+		}
+		logrus.WithError(err).Error("Validate internal access failed (grpc)")
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
+
+	return &types.ValidateInternalAccessResponse{
+		ServiceName:   result.ServiceName,
+		AllowedAccess: result.AllowedAccess,
 	}, nil
 }
 

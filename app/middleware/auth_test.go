@@ -41,7 +41,8 @@ func newMiddleware(t *testing.T) (*middleware.AuthMiddleware, func()) {
 
 	userRepo := repository.NewUserRepository(db)
 	refreshRepo := repository.NewRefreshTokenRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, cfg)
+	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
+	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
 
 	return middleware.NewAuthMiddleware(authService), func() { _ = db.Close() }
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"testing"
 	"time"
@@ -42,6 +44,16 @@ var (
 	roleColumns = []string{
 		"role",
 	}
+	internalAPIKeyColumns = []string{
+		"id",
+		"service_name",
+		"key_hash",
+		"allowed_access_json",
+		"is_active",
+		"expires_at",
+		"created_at",
+		"updated_at",
+	}
 )
 
 const (
@@ -56,6 +68,10 @@ const (
 	insertRefreshTokenQuery   = `(?s)INSERT INTO refresh_tokens \(user_id, token, expires_at, created_at\)\s+VALUES \(\?, \?, \?, \?\)`
 	deleteRefreshTokenQuery   = `(?s)DELETE FROM refresh_tokens WHERE token = \? AND user_id = \?`
 	deleteByUserIDQuery       = `(?s)DELETE FROM refresh_tokens WHERE user_id = \?`
+	findInternalByHashQuery   = `(?s)SELECT id, service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at\s+FROM internal_api_keys\s+WHERE key_hash = \? AND is_active = 1 AND expires_at > NOW\(\)\s+ORDER BY id DESC\s+LIMIT 1`
+	findInternalByServiceName = `(?s)SELECT id, service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at\s+FROM internal_api_keys\s+WHERE service_name = \? AND is_active = 1 AND expires_at > \?\s+ORDER BY id DESC`
+	insertInternalAPIKeyQuery = `(?s)INSERT INTO internal_api_keys \(\s+service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at\s+\) VALUES \(\?, \?, \?, \?, \?, \?, \?\)`
+	updateInternalAPIKeyQuery = `(?s)UPDATE internal_api_keys SET\s+service_name = \?,\s+key_hash = \?,\s+allowed_access_json = \?,\s+is_active = \?,\s+expires_at = \?,\s+updated_at = \?\s+WHERE id = \?`
 )
 
 func newServiceWithMock(t *testing.T) (*service.AuthService, sqlmock.Sqlmock, func()) {
@@ -89,7 +105,8 @@ func newServiceWithMockAndPolicy(t *testing.T, policy config.PasswordPolicy) (*s
 
 	userRepo := repository.NewUserRepository(db)
 	refreshRepo := repository.NewRefreshTokenRepository(db)
-	svc := service.NewAuthService(db, userRepo, refreshRepo, cfg)
+	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
+	svc := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
 
 	return svc, mock, func() { _ = db.Close() }
 }
@@ -103,6 +120,11 @@ func expectUserRolesQuery(mock sqlmock.Sqlmock, userID uint64, roles ...string) 
 	mock.ExpectQuery(listUserRolesQuery).
 		WithArgs(userID).
 		WillReturnRows(rows)
+}
+
+func hashInternalAPIKeyForTest(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }
 
 func TestAuthService_Register_CreatesUser(t *testing.T) {
@@ -451,5 +473,206 @@ func TestAuthService_ValidateAccessToken_RejectsNonHMAC(t *testing.T) {
 
 	if _, err := svc.ValidateAccessToken(tokenString); err == nil {
 		t.Fatalf("expected validation to fail for non-HMAC token")
+	}
+}
+
+func TestAuthService_ValidateInternalAPIKey_Success(t *testing.T) {
+	svc, mock, cleanup := newServiceWithMock(t)
+	defer cleanup()
+
+	rawKey := "msint_test_key"
+	keyHash := hashInternalAPIKeyForTest(rawKey)
+	now := time.Now()
+
+	mock.ExpectQuery(findInternalByHashQuery).
+		WithArgs(keyHash).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns).AddRow(
+			uint64(1),
+			"profile-service",
+			keyHash,
+			`["notifications","auth"]`,
+			true,
+			now.Add(time.Hour),
+			now,
+			now,
+		))
+
+	res, err := svc.ValidateInternalAPIKey(context.Background(), rawKey)
+	if err != nil {
+		t.Fatalf("validate internal api key failed: %v", err)
+	}
+	if res.ServiceName != "profile-service" {
+		t.Fatalf("expected service_name profile-service, got %q", res.ServiceName)
+	}
+	if len(res.AllowedAccess) != 2 {
+		t.Fatalf("expected 2 allowed access entries, got %#v", res.AllowedAccess)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthService_GenerateInternalAPIKey_FailsWhenActiveExists(t *testing.T) {
+	svc, mock, cleanup := newServiceWithMock(t)
+	defer cleanup()
+
+	now := time.Now()
+	mock.ExpectQuery(findInternalByServiceName).
+		WithArgs("profile-service", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns).AddRow(
+			uint64(1),
+			"profile-service",
+			"existing-hash",
+			`[]`,
+			true,
+			now.Add(time.Hour),
+			now,
+			now,
+		))
+
+	_, err := svc.GenerateInternalAPIKey(context.Background(), "profile-service")
+	if err == nil || !errors.Is(err, service.ErrServiceHasActiveAPIKey) {
+		t.Fatalf("expected ErrServiceHasActiveAPIKey, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthService_AddInternalAllowedAccess_UpdatesMissingEntries(t *testing.T) {
+	svc, mock, cleanup := newServiceWithMock(t)
+	defer cleanup()
+
+	now := time.Now()
+	mock.ExpectQuery(findInternalByServiceName).
+		WithArgs("profile-service", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns).
+			AddRow(
+				uint64(2),
+				"profile-service",
+				"hash-2",
+				`[]`,
+				true,
+				now.Add(time.Hour),
+				now,
+				now,
+			).
+			AddRow(
+				uint64(1),
+				"profile-service",
+				"hash-1",
+				`["notifications"]`,
+				true,
+				now.Add(time.Hour),
+				now,
+				now,
+			))
+
+	mock.ExpectExec(updateInternalAPIKeyQuery).
+		WithArgs(
+			"profile-service",
+			"hash-2",
+			`["notifications"]`,
+			true,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			uint64(2),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := svc.AddInternalAllowedAccess(context.Background(), "profile-service", "notifications"); err != nil {
+		t.Fatalf("add internal allowed access failed: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthService_RegenerateInternalAPIKey_Success(t *testing.T) {
+	svc, mock, cleanup := newServiceWithMock(t)
+	defer cleanup()
+
+	now := time.Now()
+	mock.ExpectQuery(findInternalByServiceName).
+		WithArgs("profile-service", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns).
+			AddRow(
+				uint64(2),
+				"profile-service",
+				"hash-2",
+				`["svc-b","svc-c"]`,
+				true,
+				now.Add(time.Hour),
+				now,
+				now,
+			).
+			AddRow(
+				uint64(1),
+				"profile-service",
+				"hash-1",
+				`["svc-a","svc-b"]`,
+				true,
+				now.Add(2*time.Hour),
+				now,
+				now,
+			))
+
+	mock.ExpectExec(updateInternalAPIKeyQuery).
+		WithArgs(
+			"profile-service",
+			"hash-2",
+			`["svc-b","svc-c"]`,
+			true,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			uint64(2),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(updateInternalAPIKeyQuery).
+		WithArgs(
+			"profile-service",
+			"hash-1",
+			`["svc-a","svc-b"]`,
+			true,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			uint64(1),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(insertInternalAPIKeyQuery).
+		WithArgs(
+			"profile-service",
+			sqlmock.AnyArg(),
+			`["svc-a","svc-b","svc-c"]`,
+			true,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(3, 1))
+
+	key, err := svc.RegenerateInternalAPIKey(context.Background(), "profile-service", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("regenerate internal api key failed: %v", err)
+	}
+	if key == "" {
+		t.Fatalf("expected a new API key")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthService_RegenerateInternalAPIKey_InvalidTTL(t *testing.T) {
+	svc, _, cleanup := newServiceWithMock(t)
+	defer cleanup()
+
+	_, err := svc.RegenerateInternalAPIKey(context.Background(), "profile-service", 5*time.Minute)
+	if err == nil || !errors.Is(err, service.ErrInvalidRegenerationTTL) {
+		t.Fatalf("expected ErrInvalidRegenerationTTL, got %v", err)
 	}
 }

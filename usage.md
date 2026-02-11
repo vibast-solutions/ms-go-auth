@@ -9,6 +9,10 @@ You are building a microservice that depends on the auth microservice. This docu
 
 ## Authentication Model
 
+All callers must send a valid internal API key:
+- HTTP: `X-API-Key`
+- gRPC: metadata `x-api-key`
+
 The auth service uses a two-token system:
 - **Access token**: A short-lived JWT (default 15 minutes). Include it in requests to protected endpoints as `Authorization: Bearer <access_token>`. The JWT payload contains `user_id` (uint64), `email` (string), and `roles` ([]string).
 - **Refresh token**: A long-lived opaque UUID (default 7 days), stored in the database. Used to obtain new access tokens via `POST /auth/refresh-token`. Token rotation is enforced: each refresh issues a new token pair and invalidates the old refresh token.
@@ -31,6 +35,7 @@ service AuthService {
   rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+  rpc ValidateInternalAccess(ValidateInternalAccessRequest) returns (ValidateInternalAccessResponse);
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
   rpc GenerateConfirmToken(GenerateConfirmTokenRequest) returns (GenerateConfirmTokenResponse);
 }
@@ -45,7 +50,7 @@ Request:  { access_token: "the-jwt-string" }
 Response: { valid: true/false, user_id: 123, email: "user@example.com", roles: ["ROLE_USER"] }
 ```
 
-If `valid` is `false`, reject the request. If `valid` is `true`, use `user_id` and `email` to identify the caller.
+If `valid` is `false`, reject the request. If `valid` is `true`, use `user_id`, `email`, and `roles` to identify the caller.
 
 ### gRPC Error Codes
 
@@ -209,6 +214,14 @@ Errors:   400 (invalid/expired token, missing fields)
 2. Call `ValidateToken` via gRPC or `POST /auth/validate-token` via HTTP
 3. If `valid` is `true`, use the returned `user_id`, `email`, and `roles` to identify the caller
 4. If `valid` is `false`, reject the request
+
+### Service-to-service internal API key flow
+1. Call `POST /auth/internal/access` with:
+   - header `X-API-Key: <caller-service-api-key>`
+   - body `{"api_key":"<key-to-inspect>"}`
+2. If auth returns `401`, reject caller (untrusted caller service)
+3. If auth returns `404`, reject caller (inspected key not found)
+4. If auth returns `200`, use `service_name` and `allowed_access` to verify caller permissions
 
 ### Password reset flow
 1. `POST /auth/request-password-reset` with email -> get `reset_token`

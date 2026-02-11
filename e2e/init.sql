@@ -37,3 +37,15 @@ CREATE TABLE user_roles (
     INDEX idx_user_roles_role (role),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE internal_api_keys (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    service_name VARCHAR(255) NOT NULL,
+    key_hash VARCHAR(255) NOT NULL,
+    allowed_access_json TEXT NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE INDEX idx_internal_api_keys_key_hash (key_hash)
+);

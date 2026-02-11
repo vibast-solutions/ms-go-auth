@@ -44,3 +44,7 @@ type GenerateConfirmTokenRequest struct {
 type ValidateTokenRequest struct {
 	AccessToken string `json:"access_token"`
 }
+
+type ValidateInternalAccessRequest struct {
+	APIKey string `json:"api_key"`
+}

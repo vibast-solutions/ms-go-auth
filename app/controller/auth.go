@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	dto "github.com/vibast-solutions/ms-go-auth/app/dto/http"
@@ -372,5 +373,30 @@ func (c *AuthController) ResetPassword(ctx echo.Context) error {
 	logrus.Info("Password reset successful")
 	return ctx.JSON(http.StatusOK, dto.ResetPasswordResponse{
 		Message: "password reset successfully",
+	})
+}
+
+func (c *AuthController) InternalAccess(ctx echo.Context) error {
+	var req dto.ValidateInternalAccessRequest
+	if err := ctx.Bind(&req); err != nil {
+		logrus.WithError(err).Debug("Failed to bind internal access request")
+		return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid request body"})
+	}
+	if strings.TrimSpace(req.APIKey) == "" {
+		return ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "api_key is required"})
+	}
+
+	result, err := c.authService.ValidateInternalAPIKey(ctx.Request().Context(), req.APIKey)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidInternalAPIKey) {
+			return ctx.JSON(http.StatusNotFound, dto.ErrorResponse{Error: "api key not found"})
+		}
+		logrus.WithError(err).Error("Internal access validation failed")
+		return ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "internal server error"})
+	}
+
+	return ctx.JSON(http.StatusOK, dto.InternalAccessResponse{
+		ServiceName:   result.ServiceName,
+		AllowedAccess: result.AllowedAccess,
 	})
 }

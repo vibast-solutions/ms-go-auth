@@ -6,6 +6,9 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -17,19 +20,23 @@ import (
 
 	"github.com/vibast-solutions/ms-go-auth/app/types"
 
+	_ "github.com/go-sql-driver/mysql"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
 	defaultHTTPBase = "http://localhost:18080"
 	defaultGRPCAddr = "localhost:19090"
+	defaultMySQLDSN = "root:root@tcp(localhost:13306)/auth?parseTime=true"
 	defaultUserRole = "ROLE_USER"
 )
 
 type httpClient struct {
 	baseURL string
 	client  *http.Client
+	apiKey  string
 }
 
 func newHTTPClient() *httpClient {
@@ -46,6 +53,10 @@ func newHTTPClient() *httpClient {
 }
 
 func (c *httpClient) postJSON(t *testing.T, path string, body any) (*http.Response, []byte) {
+	return c.postJSONWithHeaders(t, path, body, nil, true)
+}
+
+func (c *httpClient) postJSONWithHeaders(t *testing.T, path string, body any, headers map[string]string, useDefaultAPIKey bool) (*http.Response, []byte) {
 	t.Helper()
 
 	data, err := json.Marshal(body)
@@ -58,6 +69,12 @@ func (c *httpClient) postJSON(t *testing.T, path string, body any) (*http.Respon
 		t.Fatalf("new request failed: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if useDefaultAPIKey && c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -81,7 +98,7 @@ func waitForHTTP(baseURL string, timeout time.Duration) error {
 		resp, err := client.Do(req)
 		if err == nil {
 			resp.Body.Close()
-			if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusOK {
+			if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized {
 				return nil
 			}
 		}
@@ -123,6 +140,7 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 	client := newHTTPClient()
 
 	state := struct {
+		serviceAPIKey   string
 		email           string
 		password        string
 		newPassword     string
@@ -133,11 +151,18 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 		accessToken2    string
 		refreshToken2   string
 		resetToken      string
+		internalAPIKey  string
+		internalService string
 	}{
-		email:       fmt.Sprintf("e2e+%d@example.com", time.Now().UnixNano()),
-		password:    "StrongPass1!",
-		newPassword: "NewStrongPass1!",
+		email:           fmt.Sprintf("e2e+%d@example.com", time.Now().UnixNano()),
+		password:        "StrongPass1!",
+		newPassword:     "NewStrongPass1!",
+		internalService: fmt.Sprintf("internal-%d", time.Now().UnixNano()),
 	}
+
+	state.serviceAPIKey = seedInternalAPIKey(t, fmt.Sprintf("e2e-caller-%d", time.Now().UnixNano()), []string{"auth", "notifications"}, true, time.Now().Add(time.Hour))
+	state.internalAPIKey = seedInternalAPIKey(t, state.internalService, []string{"auth", "notifications"}, true, time.Now().Add(time.Hour))
+	client.apiKey = state.serviceAPIKey
 
 	abort := false
 	fail := func(t *testing.T, format string, args ...any) {
@@ -153,6 +178,68 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 			fn(t)
 		})
 	}
+
+	step("InternalAccessMissingKey", func(t *testing.T) {
+		resp, _ := client.postJSONWithHeaders(t, "/auth/internal/access", map[string]string{
+			"api_key": state.internalAPIKey,
+		}, nil, false)
+		if resp.StatusCode != http.StatusUnauthorized {
+			fail(t, "expected internal access without key to fail, got %d", resp.StatusCode)
+		}
+	})
+
+	step("InternalAccessInvalidKey", func(t *testing.T) {
+		resp, _ := client.postJSONWithHeaders(t, "/auth/internal/access", map[string]string{
+			"api_key": state.internalAPIKey,
+		}, map[string]string{
+			"X-API-Key": "invalid-key",
+		}, false)
+		if resp.StatusCode != http.StatusUnauthorized {
+			fail(t, "expected internal access with invalid key to fail, got %d", resp.StatusCode)
+		}
+	})
+
+	step("InternalAccessSuccess", func(t *testing.T) {
+		resp, body := client.postJSON(t, "/auth/internal/access", map[string]string{
+			"api_key": state.internalAPIKey,
+		})
+		if resp.StatusCode != http.StatusOK {
+			fail(t, "internal access status: %d body: %s", resp.StatusCode, string(body))
+		}
+
+		var accessRes struct {
+			ServiceName   string   `json:"service_name"`
+			AllowedAccess []string `json:"allowed_access"`
+		}
+		if err := json.Unmarshal(body, &accessRes); err != nil {
+			fail(t, "internal access unmarshal failed: %v", err)
+		}
+		if accessRes.ServiceName != state.internalService {
+			fail(t, "expected internal service %q, got %q", state.internalService, accessRes.ServiceName)
+		}
+		if len(accessRes.AllowedAccess) != 2 || accessRes.AllowedAccess[0] != "auth" || accessRes.AllowedAccess[1] != "notifications" {
+			fail(t, "expected allowed_access [auth notifications], got %#v", accessRes.AllowedAccess)
+		}
+	})
+
+	step("InternalAccessInspectedKeyNotFound", func(t *testing.T) {
+		resp, _ := client.postJSON(t, "/auth/internal/access", map[string]string{
+			"api_key": "invalid-key",
+		})
+		if resp.StatusCode != http.StatusNotFound {
+			fail(t, "expected internal access with unknown inspected key to fail with 404, got %d", resp.StatusCode)
+		}
+	})
+
+	step("LoginWithoutAPIKeyRejected", func(t *testing.T) {
+		resp, _ := client.postJSONWithHeaders(t, "/auth/login", map[string]string{
+			"email":    state.email,
+			"password": state.password,
+		}, nil, false)
+		if resp.StatusCode != http.StatusUnauthorized {
+			fail(t, "expected login without api key to fail with 401, got %d", resp.StatusCode)
+		}
+	})
 
 	step("LoginBeforeRegister", func(t *testing.T) {
 		resp, _ := client.postJSON(t, "/auth/login", map[string]string{
@@ -558,7 +645,8 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 		defer conn.Close()
 
 		grpcClient := types.NewAuthServiceClient(conn)
-		grpcRes, err := grpcClient.ValidateToken(context.Background(), &types.ValidateTokenRequest{
+		grpcCtx := contextWithAPIKey(state.serviceAPIKey)
+		grpcRes, err := grpcClient.ValidateToken(grpcCtx, &types.ValidateTokenRequest{
 			AccessToken: state.accessToken2,
 		})
 		if err != nil {
@@ -571,7 +659,7 @@ func TestAuthE2E_HTTPFlow(t *testing.T) {
 			fail(t, "expected grpc validate roles [%s], got %#v", defaultUserRole, grpcRes.Roles)
 		}
 
-		grpcRes, err = grpcClient.ValidateToken(context.Background(), &types.ValidateTokenRequest{
+		grpcRes, err = grpcClient.ValidateToken(grpcCtx, &types.ValidateTokenRequest{
 			AccessToken: "invalid",
 		})
 		if err != nil {
@@ -608,6 +696,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 
 	client := types.NewAuthServiceClient(conn)
 	state := struct {
+		serviceAPIKey   string
 		email           string
 		password        string
 		newPassword     string
@@ -622,6 +711,8 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 		password:    "StrongPass1!",
 		newPassword: "NewStrongPass1!",
 	}
+	state.serviceAPIKey = seedInternalAPIKey(t, fmt.Sprintf("e2e-grpc-caller-%d", time.Now().UnixNano()), []string{"auth", "notifications"}, true, time.Now().Add(time.Hour))
+	grpcCtx := contextWithAPIKey(state.serviceAPIKey)
 
 	abort := false
 	fail := func(t *testing.T, format string, args ...any) {
@@ -637,8 +728,18 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 		})
 	}
 
-	step("RegisterWeakPassword", func(t *testing.T) {
+	step("RegisterWithoutAPIKeyRejected", func(t *testing.T) {
 		_, err = client.Register(context.Background(), &types.RegisterRequest{
+			Email:    "no-key-" + state.email,
+			Password: state.password,
+		})
+		if err == nil {
+			fail(t, "expected register without api key to fail")
+		}
+	})
+
+	step("RegisterWeakPassword", func(t *testing.T) {
+		_, err = client.Register(grpcCtx, &types.RegisterRequest{
 			Email:    "weak-" + state.email,
 			Password: "short",
 		})
@@ -648,7 +749,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("Register", func(t *testing.T) {
-		regRes, err := client.Register(context.Background(), &types.RegisterRequest{
+		regRes, err := client.Register(grpcCtx, &types.RegisterRequest{
 			Email:    state.email,
 			Password: state.password,
 		})
@@ -666,7 +767,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("GenerateConfirmToken", func(t *testing.T) {
-		genRes, err := client.GenerateConfirmToken(context.Background(), &types.GenerateConfirmTokenRequest{
+		genRes, err := client.GenerateConfirmToken(grpcCtx, &types.GenerateConfirmTokenRequest{
 			Email: state.email,
 		})
 		if err != nil {
@@ -678,7 +779,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("LoginBeforeConfirm", func(t *testing.T) {
-		_, err = client.Login(context.Background(), &types.LoginRequest{
+		_, err = client.Login(grpcCtx, &types.LoginRequest{
 			Email:    state.email,
 			Password: state.password,
 		})
@@ -688,7 +789,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("ConfirmAccount", func(t *testing.T) {
-		_, err = client.ConfirmAccount(context.Background(), &types.ConfirmAccountRequest{
+		_, err = client.ConfirmAccount(grpcCtx, &types.ConfirmAccountRequest{
 			Token: state.confirmToken,
 		})
 		if err != nil {
@@ -697,7 +798,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("GenerateConfirmTokenAfterConfirm", func(t *testing.T) {
-		_, err = client.GenerateConfirmToken(context.Background(), &types.GenerateConfirmTokenRequest{
+		_, err = client.GenerateConfirmToken(grpcCtx, &types.GenerateConfirmTokenRequest{
 			Email: state.email,
 		})
 		if err == nil {
@@ -706,7 +807,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("Login", func(t *testing.T) {
-		loginRes, err := client.Login(context.Background(), &types.LoginRequest{
+		loginRes, err := client.Login(grpcCtx, &types.LoginRequest{
 			Email:    state.email,
 			Password: state.password,
 		})
@@ -724,7 +825,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("RefreshToken", func(t *testing.T) {
-		refreshRes, err := client.RefreshToken(context.Background(), &types.RefreshTokenRequest{
+		refreshRes, err := client.RefreshToken(grpcCtx, &types.RefreshTokenRequest{
 			RefreshToken: state.refreshToken,
 		})
 		if err != nil {
@@ -741,7 +842,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("OldRefreshTokenInvalid", func(t *testing.T) {
-		_, err = client.RefreshToken(context.Background(), &types.RefreshTokenRequest{
+		_, err = client.RefreshToken(grpcCtx, &types.RefreshTokenRequest{
 			RefreshToken: state.oldRefreshToken,
 		})
 		if err == nil {
@@ -750,7 +851,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("ChangePasswordWeak", func(t *testing.T) {
-		_, err = client.ChangePassword(context.Background(), &types.ChangePasswordRequest{
+		_, err = client.ChangePassword(grpcCtx, &types.ChangePasswordRequest{
 			AccessToken: state.accessToken,
 			OldPassword: state.password,
 			NewPassword: "short",
@@ -761,7 +862,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("ChangePassword", func(t *testing.T) {
-		_, err = client.ChangePassword(context.Background(), &types.ChangePasswordRequest{
+		_, err = client.ChangePassword(grpcCtx, &types.ChangePasswordRequest{
 			AccessToken: state.accessToken,
 			OldPassword: state.password,
 			NewPassword: state.newPassword,
@@ -772,7 +873,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("Logout", func(t *testing.T) {
-		_, err = client.Logout(context.Background(), &types.LogoutRequest{
+		_, err = client.Logout(grpcCtx, &types.LogoutRequest{
 			RefreshToken: state.refreshToken,
 			AccessToken:  state.accessToken,
 		})
@@ -782,7 +883,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("LogoutInvalidatesRefresh", func(t *testing.T) {
-		_, err = client.RefreshToken(context.Background(), &types.RefreshTokenRequest{
+		_, err = client.RefreshToken(grpcCtx, &types.RefreshTokenRequest{
 			RefreshToken: state.refreshToken,
 		})
 		if err == nil {
@@ -791,7 +892,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("RequestResetUnknownUser", func(t *testing.T) {
-		_, err = client.RequestPasswordReset(context.Background(), &types.RequestPasswordResetRequest{
+		_, err = client.RequestPasswordReset(grpcCtx, &types.RequestPasswordResetRequest{
 			Email: "missing-" + state.email,
 		})
 		if err != nil {
@@ -800,7 +901,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("RequestReset", func(t *testing.T) {
-		resetRes, err := client.RequestPasswordReset(context.Background(), &types.RequestPasswordResetRequest{
+		resetRes, err := client.RequestPasswordReset(grpcCtx, &types.RequestPasswordResetRequest{
 			Email: state.email,
 		})
 		if err != nil {
@@ -813,7 +914,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("ResetWeakPassword", func(t *testing.T) {
-		_, err = client.ResetPassword(context.Background(), &types.ResetPasswordRequest{
+		_, err = client.ResetPassword(grpcCtx, &types.ResetPasswordRequest{
 			Token:       state.resetToken,
 			NewPassword: "short",
 		})
@@ -823,7 +924,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("ResetPassword", func(t *testing.T) {
-		_, err = client.ResetPassword(context.Background(), &types.ResetPasswordRequest{
+		_, err = client.ResetPassword(grpcCtx, &types.ResetPasswordRequest{
 			Token:       state.resetToken,
 			NewPassword: state.password,
 		})
@@ -833,7 +934,7 @@ func TestAuthE2E_GRPCFlow(t *testing.T) {
 	})
 
 	step("ResetPasswordUsedToken", func(t *testing.T) {
-		_, err = client.ResetPassword(context.Background(), &types.ResetPasswordRequest{
+		_, err = client.ResetPassword(grpcCtx, &types.ResetPasswordRequest{
 			Token:       state.resetToken,
 			NewPassword: state.password,
 		})
@@ -857,6 +958,9 @@ func (c *httpClient) postJSONWithAuth(t *testing.T, path, accessToken string, bo
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -875,4 +979,57 @@ func ioReadAll(resp *http.Response) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	_, err := buf.ReadFrom(resp.Body)
 	return buf.Bytes(), err
+}
+
+func seedInternalAPIKey(t *testing.T, serviceName string, allowedAccess []string, isActive bool, expiresAt time.Time) string {
+	t.Helper()
+
+	dsn := os.Getenv("AUTH_MYSQL_DSN")
+	if dsn == "" {
+		dsn = defaultMySQLDSN
+	}
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("open mysql failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		t.Fatalf("ping mysql failed: %v", err)
+	}
+
+	allowedAccessJSON, err := json.Marshal(allowedAccess)
+	if err != nil {
+		t.Fatalf("marshal allowed access failed: %v", err)
+	}
+
+	rawKey := fmt.Sprintf("msint_e2e_%d", time.Now().UnixNano())
+	keyHash := hashInternalAPIKey(rawKey)
+	now := time.Now()
+
+	_, err = db.Exec(
+		`INSERT INTO internal_api_keys (service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		serviceName,
+		keyHash,
+		string(allowedAccessJSON),
+		isActive,
+		expiresAt,
+		now,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("insert internal api key failed: %v", err)
+	}
+
+	return rawKey
+}
+
+func hashInternalAPIKey(rawKey string) string {
+	sum := sha256.Sum256([]byte(rawKey))
+	return hex.EncodeToString(sum[:])
+}
+
+func contextWithAPIKey(apiKey string) context.Context {
+	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs("x-api-key", apiKey))
 }

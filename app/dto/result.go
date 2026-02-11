@@ -17,3 +17,8 @@ type LoginResult struct {
 type RequestPasswordResetResult struct {
 	ResetToken string
 }
+
+type InternalAccessResult struct {
+	ServiceName   string
+	AllowedAccess []string
+}

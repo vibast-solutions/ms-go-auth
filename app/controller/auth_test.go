@@ -28,6 +28,7 @@ const (
 	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
 	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
 	listUserRolesQuery        = `(?s)SELECT role FROM user_roles WHERE user_id = \? ORDER BY role`
+	findInternalByHashQuery   = `(?s)SELECT id, service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at\s+FROM internal_api_keys\s+WHERE key_hash = \? AND is_active = 1 AND expires_at > NOW\(\)\s+ORDER BY id DESC\s+LIMIT 1`
 )
 
 var userColumns = []string{
@@ -46,6 +47,17 @@ var userColumns = []string{
 
 var roleColumns = []string{
 	"role",
+}
+
+var internalAPIKeyColumns = []string{
+	"id",
+	"service_name",
+	"key_hash",
+	"allowed_access_json",
+	"is_active",
+	"expires_at",
+	"created_at",
+	"updated_at",
 }
 
 func newControllerWithMock(t *testing.T) (*controller.AuthController, sqlmock.Sqlmock, func()) {
@@ -73,7 +85,8 @@ func newControllerWithMock(t *testing.T) (*controller.AuthController, sqlmock.Sq
 
 	userRepo := repository.NewUserRepository(db)
 	refreshRepo := repository.NewRefreshTokenRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, cfg)
+	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
+	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
 
 	return controller.NewAuthController(authService), mock, func() { _ = db.Close() }
 }
@@ -356,6 +369,90 @@ func TestLogout_MissingRefreshToken(t *testing.T) {
 	}
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}
+
+func TestInternalAccess_MissingBodyAPIKey(t *testing.T) {
+	controllerWithMock, _, cleanup := newControllerWithMock(t)
+	defer cleanup()
+
+	req, rec := newJSONRequest(t, http.MethodPost, "/auth/internal/access", map[string]string{})
+	e := echo.New()
+	ctx := e.NewContext(req, rec)
+
+	if err := controllerWithMock.InternalAccess(ctx); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}
+
+func TestInternalAccess_InvalidAPIKey(t *testing.T) {
+	controllerWithMock, mock, cleanup := newControllerWithMock(t)
+	defer cleanup()
+
+	req, rec := newJSONRequest(t, http.MethodPost, "/auth/internal/access", map[string]string{
+		"api_key": "invalid-key",
+	})
+	e := echo.New()
+	ctx := e.NewContext(req, rec)
+
+	mock.ExpectQuery(findInternalByHashQuery).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns))
+
+	if err := controllerWithMock.InternalAccess(ctx); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", rec.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestInternalAccess_Success(t *testing.T) {
+	controllerWithMock, mock, cleanup := newControllerWithMock(t)
+	defer cleanup()
+
+	now := time.Now()
+	req, rec := newJSONRequest(t, http.MethodPost, "/auth/internal/access", map[string]string{
+		"api_key": "valid-key",
+	})
+	e := echo.New()
+	ctx := e.NewContext(req, rec)
+
+	mock.ExpectQuery(findInternalByHashQuery).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns).AddRow(
+			uint64(1),
+			"profile-service",
+			"hash",
+			`["notifications","auth"]`,
+			true,
+			now.Add(time.Hour),
+			now,
+			now,
+		))
+
+	if err := controllerWithMock.InternalAccess(ctx); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"service_name":"profile-service"`) {
+		t.Fatalf("expected service_name in response, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"allowed_access":["notifications","auth"]`) {
+		t.Fatalf("expected allowed_access in response, got %s", rec.Body.String())
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
 	}
 }
 

@@ -58,3 +58,8 @@ type ValidateTokenResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+type InternalAccessResponse struct {
+	ServiceName   string   `json:"service_name"`
+	AllowedAccess []string `json:"allowed_access"`
+}

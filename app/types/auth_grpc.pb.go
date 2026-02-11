@@ -19,16 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	AuthService_Register_FullMethodName             = "/auth.AuthService/Register"
-	AuthService_Login_FullMethodName                = "/auth.AuthService/Login"
-	AuthService_Logout_FullMethodName               = "/auth.AuthService/Logout"
-	AuthService_ChangePassword_FullMethodName       = "/auth.AuthService/ChangePassword"
-	AuthService_ConfirmAccount_FullMethodName       = "/auth.AuthService/ConfirmAccount"
-	AuthService_RequestPasswordReset_FullMethodName = "/auth.AuthService/RequestPasswordReset"
-	AuthService_ResetPassword_FullMethodName        = "/auth.AuthService/ResetPassword"
-	AuthService_ValidateToken_FullMethodName        = "/auth.AuthService/ValidateToken"
-	AuthService_RefreshToken_FullMethodName         = "/auth.AuthService/RefreshToken"
-	AuthService_GenerateConfirmToken_FullMethodName = "/auth.AuthService/GenerateConfirmToken"
+	AuthService_Register_FullMethodName               = "/auth.AuthService/Register"
+	AuthService_Login_FullMethodName                  = "/auth.AuthService/Login"
+	AuthService_Logout_FullMethodName                 = "/auth.AuthService/Logout"
+	AuthService_ChangePassword_FullMethodName         = "/auth.AuthService/ChangePassword"
+	AuthService_ConfirmAccount_FullMethodName         = "/auth.AuthService/ConfirmAccount"
+	AuthService_RequestPasswordReset_FullMethodName   = "/auth.AuthService/RequestPasswordReset"
+	AuthService_ResetPassword_FullMethodName          = "/auth.AuthService/ResetPassword"
+	AuthService_ValidateToken_FullMethodName          = "/auth.AuthService/ValidateToken"
+	AuthService_ValidateInternalAccess_FullMethodName = "/auth.AuthService/ValidateInternalAccess"
+	AuthService_RefreshToken_FullMethodName           = "/auth.AuthService/RefreshToken"
+	AuthService_GenerateConfirmToken_FullMethodName   = "/auth.AuthService/GenerateConfirmToken"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -43,6 +44,7 @@ type AuthServiceClient interface {
 	RequestPasswordReset(ctx context.Context, in *RequestPasswordResetRequest, opts ...grpc.CallOption) (*RequestPasswordResetResponse, error)
 	ResetPassword(ctx context.Context, in *ResetPasswordRequest, opts ...grpc.CallOption) (*ResetPasswordResponse, error)
 	ValidateToken(ctx context.Context, in *ValidateTokenRequest, opts ...grpc.CallOption) (*ValidateTokenResponse, error)
+	ValidateInternalAccess(ctx context.Context, in *ValidateInternalAccessRequest, opts ...grpc.CallOption) (*ValidateInternalAccessResponse, error)
 	RefreshToken(ctx context.Context, in *RefreshTokenRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error)
 	GenerateConfirmToken(ctx context.Context, in *GenerateConfirmTokenRequest, opts ...grpc.CallOption) (*GenerateConfirmTokenResponse, error)
 }
@@ -127,6 +129,15 @@ func (c *authServiceClient) ValidateToken(ctx context.Context, in *ValidateToken
 	return out, nil
 }
 
+func (c *authServiceClient) ValidateInternalAccess(ctx context.Context, in *ValidateInternalAccessRequest, opts ...grpc.CallOption) (*ValidateInternalAccessResponse, error) {
+	out := new(ValidateInternalAccessResponse)
+	err := c.cc.Invoke(ctx, AuthService_ValidateInternalAccess_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *authServiceClient) RefreshToken(ctx context.Context, in *RefreshTokenRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error) {
 	out := new(RefreshTokenResponse)
 	err := c.cc.Invoke(ctx, AuthService_RefreshToken_FullMethodName, in, out, opts...)
@@ -157,6 +168,7 @@ type AuthServiceServer interface {
 	RequestPasswordReset(context.Context, *RequestPasswordResetRequest) (*RequestPasswordResetResponse, error)
 	ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error)
 	ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error)
+	ValidateInternalAccess(context.Context, *ValidateInternalAccessRequest) (*ValidateInternalAccessResponse, error)
 	RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error)
 	GenerateConfirmToken(context.Context, *GenerateConfirmTokenRequest) (*GenerateConfirmTokenResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
@@ -189,6 +201,9 @@ func (UnimplementedAuthServiceServer) ResetPassword(context.Context, *ResetPassw
 }
 func (UnimplementedAuthServiceServer) ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ValidateToken not implemented")
+}
+func (UnimplementedAuthServiceServer) ValidateInternalAccess(context.Context, *ValidateInternalAccessRequest) (*ValidateInternalAccessResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ValidateInternalAccess not implemented")
 }
 func (UnimplementedAuthServiceServer) RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RefreshToken not implemented")
@@ -353,6 +368,24 @@ func _AuthService_ValidateToken_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_ValidateInternalAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ValidateInternalAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).ValidateInternalAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_ValidateInternalAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).ValidateInternalAccess(ctx, req.(*ValidateInternalAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AuthService_RefreshToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RefreshTokenRequest)
 	if err := dec(in); err != nil {
@@ -427,6 +460,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ValidateToken",
 			Handler:    _AuthService_ValidateToken_Handler,
+		},
+		{
+			MethodName: "ValidateInternalAccess",
+			Handler:    _AuthService_ValidateInternalAccess_Handler,
 		},
 		{
 			MethodName: "RefreshToken",
