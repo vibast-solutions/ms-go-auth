@@ -9,7 +9,6 @@ import (
 	"github.com/vibast-solutions/ms-go-auth/app/middleware"
 	"github.com/vibast-solutions/ms-go-auth/app/repository"
 	"github.com/vibast-solutions/ms-go-auth/app/service"
-	"github.com/vibast-solutions/ms-go-auth/config"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/labstack/echo/v4"
@@ -36,27 +35,10 @@ func newAPIKeyMiddleware(t *testing.T) (*middleware.APIKeyMiddleware, sqlmock.Sq
 		t.Fatalf("failed to create sqlmock: %v", err)
 	}
 
-	cfg := &config.Config{
-		JWTSecret:          "test-secret",
-		JWTAccessTokenTTL:  15 * time.Minute,
-		JWTRefreshTokenTTL: 7 * 24 * time.Hour,
-		ConfirmTokenTTL:    24 * time.Hour,
-		ResetTokenTTL:      time.Hour,
-		PasswordPolicy: config.PasswordPolicy{
-			MinLength:        1,
-			RequireUppercase: false,
-			RequireLowercase: false,
-			RequireNumber:    false,
-			RequireSpecial:   false,
-		},
-	}
-
-	userRepo := repository.NewUserRepository(db)
-	refreshRepo := repository.NewRefreshTokenRepository(db)
 	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
+	internalAuthService := service.NewInternalAuthService(internalAPIKeyRepo)
 
-	return middleware.NewAPIKeyMiddleware(authService), mock, func() { _ = db.Close() }
+	return middleware.NewAPIKeyMiddleware(internalAuthService), mock, func() { _ = db.Close() }
 }
 
 func TestRequireAPIKey_MissingHeader(t *testing.T) {

@@ -8,7 +8,6 @@ import (
 	authgrpc "github.com/vibast-solutions/ms-go-auth/app/grpc"
 	"github.com/vibast-solutions/ms-go-auth/app/repository"
 	"github.com/vibast-solutions/ms-go-auth/app/service"
-	"github.com/vibast-solutions/ms-go-auth/config"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"google.golang.org/grpc"
@@ -30,35 +29,17 @@ var interceptorInternalAPIKeyColumns = []string{
 
 const interceptorFindInternalByHashQuery = `(?s)SELECT id, service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at\s+FROM internal_api_keys\s+WHERE key_hash = \? AND is_active = 1 AND expires_at > NOW\(\)\s+ORDER BY id DESC\s+LIMIT 1`
 
-func newServiceForInterceptor(t *testing.T) (*service.AuthService, sqlmock.Sqlmock, func()) {
+func newServiceForInterceptor(t *testing.T) (service.InternalAuthService, sqlmock.Sqlmock, func()) {
 	t.Helper()
 
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	if err != nil {
 		t.Fatalf("failed to create sqlmock: %v", err)
 	}
-
-	cfg := &config.Config{
-		JWTSecret:          "test-secret",
-		JWTAccessTokenTTL:  15 * time.Minute,
-		JWTRefreshTokenTTL: 7 * 24 * time.Hour,
-		ConfirmTokenTTL:    24 * time.Hour,
-		ResetTokenTTL:      time.Hour,
-		PasswordPolicy: config.PasswordPolicy{
-			MinLength:        1,
-			RequireUppercase: false,
-			RequireLowercase: false,
-			RequireNumber:    false,
-			RequireSpecial:   false,
-		},
-	}
-
-	userRepo := repository.NewUserRepository(db)
-	refreshRepo := repository.NewRefreshTokenRepository(db)
 	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
+	internalAuthService := service.NewInternalAuthService(internalAPIKeyRepo)
 
-	return authService, mock, func() { _ = db.Close() }
+	return internalAuthService, mock, func() { _ = db.Close() }
 }
 
 func TestAPIKeyUnaryInterceptor_MissingKey(t *testing.T) {

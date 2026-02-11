@@ -53,14 +53,15 @@ func runServe(_ *cobra.Command, _ []string) {
 	userRepo := repository.NewUserRepository(db)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
 	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshTokenRepo, internalAPIKeyRepo, cfg)
+	userAuthService := service.NewUserAuthService(db, userRepo, refreshTokenRepo, cfg)
+	internalAuthService := service.NewInternalAuthService(internalAPIKeyRepo)
 
-	go startGRPCServer(cfg, authService)
+	go startGRPCServer(cfg, userAuthService, internalAuthService)
 
-	startHTTPServer(cfg, authService)
+	startHTTPServer(cfg, userAuthService, internalAuthService)
 }
 
-func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
+func startHTTPServer(cfg *config.Config, userAuthService service.UserAuthService, internalAuthService service.InternalAuthService) {
 	e := echo.New()
 	defer e.Close()
 	e.HideBanner = true
@@ -96,27 +97,28 @@ func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
 	e.Use(echomiddleware.Recover())
 	e.Use(echomiddleware.CORS())
 
-	authController := controller.NewAuthController(authService)
-	authMiddleware := middleware.NewAuthMiddleware(authService)
-	apiKeyMiddleware := middleware.NewAPIKeyMiddleware(authService)
+	userAuthController := controller.NewUserAuthController(userAuthService)
+	internalAuthController := controller.NewInternalAuthController(internalAuthService)
+	authMiddleware := middleware.NewAuthMiddleware(userAuthService)
+	apiKeyMiddleware := middleware.NewAPIKeyMiddleware(internalAuthService)
 
 	e.Use(apiKeyMiddleware.RequireAPIKey)
 
 	auth := e.Group("/auth")
-	auth.POST("/register", authController.Register)
-	auth.POST("/login", authController.Login)
-	auth.POST("/confirm-account", authController.ConfirmAccount)
-	auth.POST("/request-password-reset", authController.RequestPasswordReset)
-	auth.POST("/reset-password", authController.ResetPassword)
-	auth.POST("/refresh-token", authController.RefreshToken)
-	auth.POST("/generate-confirm-token", authController.GenerateConfirmToken)
-	auth.POST("/validate-token", authController.ValidateToken)
-	auth.POST("/internal/access", authController.InternalAccess)
+	auth.POST("/register", userAuthController.Register)
+	auth.POST("/login", userAuthController.Login)
+	auth.POST("/confirm-account", userAuthController.ConfirmAccount)
+	auth.POST("/request-password-reset", userAuthController.RequestPasswordReset)
+	auth.POST("/reset-password", userAuthController.ResetPassword)
+	auth.POST("/refresh-token", userAuthController.RefreshToken)
+	auth.POST("/generate-confirm-token", userAuthController.GenerateConfirmToken)
+	auth.POST("/validate-token", userAuthController.ValidateToken)
+	auth.POST("/internal/access", internalAuthController.InternalAccess)
 
 	authProtected := auth.Group("")
 	authProtected.Use(authMiddleware.RequireAuth)
-	authProtected.POST("/logout", authController.Logout)
-	authProtected.POST("/change-password", authController.ChangePassword)
+	authProtected.POST("/logout", userAuthController.Logout)
+	authProtected.POST("/change-password", userAuthController.ChangePassword)
 
 	httpAddr := net.JoinHostPort(cfg.HTTPHost, cfg.HTTPPort)
 	logrus.WithField("addr", httpAddr).Info("Starting HTTP server")
@@ -125,7 +127,7 @@ func startHTTPServer(cfg *config.Config, authService *service.AuthService) {
 	}
 }
 
-func startGRPCServer(cfg *config.Config, authService *service.AuthService) {
+func startGRPCServer(cfg *config.Config, userAuthService service.UserAuthService, internalAuthService service.InternalAuthService) {
 	grpcAddr := net.JoinHostPort(cfg.GRPCHost, cfg.GRPCPort)
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
@@ -133,11 +135,11 @@ func startGRPCServer(cfg *config.Config, authService *service.AuthService) {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(authgrpc.APIKeyUnaryInterceptor(authService)),
-		grpc.StreamInterceptor(authgrpc.APIKeyStreamInterceptor(authService)),
+		grpc.UnaryInterceptor(authgrpc.APIKeyUnaryInterceptor(internalAuthService)),
+		grpc.StreamInterceptor(authgrpc.APIKeyStreamInterceptor(internalAuthService)),
 	)
 	defer grpcServer.GracefulStop()
-	authServer := authgrpc.NewAuthServer(authService)
+	authServer := authgrpc.NewAuthServer(userAuthService, internalAuthService)
 	types.RegisterAuthServiceServer(grpcServer, authServer)
 
 	logrus.WithField("addr", grpcAddr).Info("Starting gRPC server")

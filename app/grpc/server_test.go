@@ -76,9 +76,10 @@ func newGRPCServerWithMock(t *testing.T) (*authgrpc.AuthServer, sqlmock.Sqlmock,
 	userRepo := repository.NewUserRepository(db)
 	refreshRepo := repository.NewRefreshTokenRepository(db)
 	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
+	userAuthService := service.NewUserAuthService(db, userRepo, refreshRepo, cfg)
+	internalAuthService := service.NewInternalAuthService(internalAPIKeyRepo)
 
-	return authgrpc.NewAuthServer(authService), mock, func() { _ = db.Close() }
+	return authgrpc.NewAuthServer(userAuthService, internalAuthService), mock, func() { _ = db.Close() }
 }
 
 func TestRegister_WeakPassword(t *testing.T) {

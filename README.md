@@ -17,6 +17,9 @@ All HTTP routes and all gRPC methods require a valid internal API key from a tru
 - Password reset token reuse (returns existing token if not expired)
 - Token validation endpoint (HTTP and gRPC) for service-to-service JWT verification
 - Both HTTP (REST) and gRPC interfaces
+- Controllers split by concern (`UserAuthController`, `InternalAuthController`)
+- Services split by concern (`UserAuthService`, `InternalAuthService`)
+- Protobuf request/response types used as DTOs across HTTP and gRPC layers
 - bcrypt password hashing
 
 ## Requirements
@@ -360,7 +363,8 @@ The gRPC service runs on port 9090 and provides the same operations. See `proto/
 
 Example with grpcurl:
 ```bash
-grpcurl -plaintext -d '{"email":"user@example.com","password":"secret"}' \
+grpcurl -plaintext -H 'x-api-key: <caller-api-key>' \
+  -d '{"email":"user@example.com","password":"secret"}' \
   localhost:9090 auth.AuthService/Register
 ```
 
@@ -430,14 +434,13 @@ auth/
 ├── config/              # Configuration
 ├── proto/               # gRPC definitions
 └── app/
-    ├── controller/      # HTTP handlers
+    ├── controller/      # HTTP handlers split by concern (user/internal)
     ├── grpc/            # gRPC handlers
-    ├── service/         # Business logic
+    ├── service/         # Business logic split by concern (user/internal)
     ├── repository/      # Database operations
     ├── entity/          # Database models
-    ├── dto/             # Service-layer result DTOs
-    │   └── http/        # HTTP request/response DTOs
-    ├── types/           # Generated protobuf types
+    ├── dto/             # Shared transport DTOs (e.g. error response)
+    ├── types/           # Generated protobuf types + HTTP bind/validate helpers
     └── middleware/      # HTTP middleware
 ```
 
@@ -456,3 +459,8 @@ auth/
 # Regenerate key and choose old key grace period interactively (default 60 minutes)
 ./build/auth-service apikey regenerate profile-service
 ```
+
+Notes:
+- `generate` fails if the service already has an active key.
+- Newly generated keys expire in 100 years by default.
+- `regenerate` asks for old-key grace period (minutes), default `60`, minimum greater than `5`.

@@ -16,10 +16,10 @@ const (
 )
 
 type APIKeyMiddleware struct {
-	authService *service.AuthService
+	authService service.InternalAuthService
 }
 
-func NewAPIKeyMiddleware(authService *service.AuthService) *APIKeyMiddleware {
+func NewAPIKeyMiddleware(authService service.InternalAuthService) *APIKeyMiddleware {
 	return &APIKeyMiddleware{authService: authService}
 }
 
@@ -52,8 +52,8 @@ func (m *APIKeyMiddleware) RequireAPIKey(next echo.HandlerFunc) echo.HandlerFunc
 			})
 		}
 
-		c.Set(ContextKeyCallerService, result.ServiceName)
-		c.Set(ContextKeyCallerAccessMap, result.AllowedAccess)
+		c.Set(ContextKeyCallerService, result.GetServiceName())
+		c.Set(ContextKeyCallerAccessMap, result.GetAllowedAccess())
 		return next(c)
 	}
 }

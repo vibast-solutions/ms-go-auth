@@ -41,10 +41,9 @@ func newMiddleware(t *testing.T) (*middleware.AuthMiddleware, func()) {
 
 	userRepo := repository.NewUserRepository(db)
 	refreshRepo := repository.NewRefreshTokenRepository(db)
-	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
+	userAuthService := service.NewUserAuthService(db, userRepo, refreshRepo, cfg)
 
-	return middleware.NewAuthMiddleware(authService), func() { _ = db.Close() }
+	return middleware.NewAuthMiddleware(userAuthService), func() { _ = db.Close() }
 }
 
 func TestRequireAuth_MissingHeader(t *testing.T) {

@@ -16,7 +16,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vibast-solutions/ms-go-auth/app/repository"
 	"github.com/vibast-solutions/ms-go-auth/app/service"
-	"github.com/vibast-solutions/ms-go-auth/config"
 )
 
 var apiKeyCmd = &cobra.Command{
@@ -29,14 +28,14 @@ var apiKeyGenerateCmd = &cobra.Command{
 	Short: "Generate an internal API key for a service",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		authService, db, err := newAuthServiceForAPIKeyCommands()
+		internalAuthService, db, err := newInternalAuthServiceForAPIKeyCommands()
 		if err != nil {
 			return err
 		}
 		defer db.Close()
 
 		serviceName := args[0]
-		key, err := authService.GenerateInternalAPIKey(context.Background(), serviceName)
+		key, err := internalAuthService.GenerateInternalAPIKey(context.Background(), serviceName)
 		if err != nil {
 			if errors.Is(err, service.ErrServiceHasActiveAPIKey) {
 				return fmt.Errorf("service %q already has an active API key", serviceName)
@@ -56,7 +55,7 @@ var apiKeyAllowCmd = &cobra.Command{
 	Short: "Allow a service to call another service",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		authService, db, err := newAuthServiceForAPIKeyCommands()
+		internalAuthService, db, err := newInternalAuthServiceForAPIKeyCommands()
 		if err != nil {
 			return err
 		}
@@ -65,7 +64,7 @@ var apiKeyAllowCmd = &cobra.Command{
 		serviceName := args[0]
 		allowedService := args[1]
 
-		if err = authService.AddInternalAllowedAccess(context.Background(), serviceName, allowedService); err != nil {
+		if err = internalAuthService.AddInternalAllowedAccess(context.Background(), serviceName, allowedService); err != nil {
 			if errors.Is(err, service.ErrServiceHasNoActiveAPIKey) {
 				return fmt.Errorf("service %q has no active API key", serviceName)
 			}
@@ -82,14 +81,14 @@ var apiKeyDeactivateCmd = &cobra.Command{
 	Short: "Deactivate all active API keys for a service",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		authService, db, err := newAuthServiceForAPIKeyCommands()
+		internalAuthService, db, err := newInternalAuthServiceForAPIKeyCommands()
 		if err != nil {
 			return err
 		}
 		defer db.Close()
 
 		serviceName := args[0]
-		count, err := authService.DeactivateInternalAPIKeys(context.Background(), serviceName)
+		count, err := internalAuthService.DeactivateInternalAPIKeys(context.Background(), serviceName)
 		if err != nil {
 			if errors.Is(err, service.ErrServiceHasNoActiveAPIKey) {
 				return fmt.Errorf("service %q has no active API key", serviceName)
@@ -107,7 +106,7 @@ var apiKeyRegenerateCmd = &cobra.Command{
 	Short: "Regenerate an internal API key and expire old active keys after a grace period",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		authService, db, err := newAuthServiceForAPIKeyCommands()
+		internalAuthService, db, err := newInternalAuthServiceForAPIKeyCommands()
 		if err != nil {
 			return err
 		}
@@ -119,7 +118,7 @@ var apiKeyRegenerateCmd = &cobra.Command{
 			return err
 		}
 
-		newKey, err := authService.RegenerateInternalAPIKey(context.Background(), serviceName, oldKeyTTL)
+		newKey, err := internalAuthService.RegenerateInternalAPIKey(context.Background(), serviceName, oldKeyTTL)
 		if err != nil {
 			if errors.Is(err, service.ErrServiceHasNoActiveAPIKey) {
 				return fmt.Errorf("service %q has no active API key", serviceName)
@@ -146,7 +145,7 @@ func init() {
 	rootCmd.AddCommand(apiKeyCmd)
 }
 
-func newAuthServiceForAPIKeyCommands() (*service.AuthService, *sql.DB, error) {
+func newInternalAuthServiceForAPIKeyCommands() (service.InternalAuthService, *sql.DB, error) {
 	_ = godotenv.Load()
 
 	dsn := strings.TrimSpace(os.Getenv("MYSQL_DSN"))
@@ -163,12 +162,10 @@ func newAuthServiceForAPIKeyCommands() (*service.AuthService, *sql.DB, error) {
 		return nil, nil, err
 	}
 
-	userRepo := repository.NewUserRepository(db)
-	refreshRepo := repository.NewRefreshTokenRepository(db)
 	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, &config.Config{})
+	internalAuthService := service.NewInternalAuthService(internalAPIKeyRepo)
 
-	return authService, db, nil
+	return internalAuthService, db, nil
 }
 
 func promptOldKeyTTLMinutes() (time.Duration, error) {

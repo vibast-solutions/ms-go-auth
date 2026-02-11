@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/vibast-solutions/ms-go-auth/app/dto"
 	"github.com/vibast-solutions/ms-go-auth/app/service"
+	"github.com/vibast-solutions/ms-go-auth/app/types"
 	gogrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -16,33 +16,33 @@ import (
 type callerServiceKey struct{}
 type callerAllowedAccessKey struct{}
 
-func APIKeyUnaryInterceptor(authService *service.AuthService) gogrpc.UnaryServerInterceptor {
+func APIKeyUnaryInterceptor(authService service.InternalAuthService) gogrpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *gogrpc.UnaryServerInfo, handler gogrpc.UnaryHandler) (any, error) {
 		result, err := validateIncomingAPIKey(ctx, authService)
 		if err != nil {
 			return nil, err
 		}
 
-		ctx = context.WithValue(ctx, callerServiceKey{}, result.ServiceName)
-		ctx = context.WithValue(ctx, callerAllowedAccessKey{}, result.AllowedAccess)
+		ctx = context.WithValue(ctx, callerServiceKey{}, result.GetServiceName())
+		ctx = context.WithValue(ctx, callerAllowedAccessKey{}, result.GetAllowedAccess())
 		return handler(ctx, req)
 	}
 }
 
-func APIKeyStreamInterceptor(authService *service.AuthService) gogrpc.StreamServerInterceptor {
+func APIKeyStreamInterceptor(authService service.InternalAuthService) gogrpc.StreamServerInterceptor {
 	return func(srv any, ss gogrpc.ServerStream, _ *gogrpc.StreamServerInfo, handler gogrpc.StreamHandler) error {
 		result, err := validateIncomingAPIKey(ss.Context(), authService)
 		if err != nil {
 			return err
 		}
 
-		ctx := context.WithValue(ss.Context(), callerServiceKey{}, result.ServiceName)
-		ctx = context.WithValue(ctx, callerAllowedAccessKey{}, result.AllowedAccess)
+		ctx := context.WithValue(ss.Context(), callerServiceKey{}, result.GetServiceName())
+		ctx = context.WithValue(ctx, callerAllowedAccessKey{}, result.GetAllowedAccess())
 		return handler(srv, &wrappedServerStream{ServerStream: ss, ctx: ctx})
 	}
 }
 
-func validateIncomingAPIKey(ctx context.Context, authService *service.AuthService) (*dto.InternalAccessResult, error) {
+func validateIncomingAPIKey(ctx context.Context, authService service.InternalAuthService) (*types.ValidateInternalAccessResponse, error) {
 	apiKey := incomingAPIKeyFromMetadata(ctx)
 	if apiKey == "" {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")

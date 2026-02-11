@@ -60,7 +60,38 @@ var internalAPIKeyColumns = []string{
 	"updated_at",
 }
 
-func newControllerWithMock(t *testing.T) (*controller.AuthController, sqlmock.Sqlmock, func()) {
+type authControllerFacade struct {
+	user     *controller.UserAuthController
+	internal *controller.InternalAuthController
+}
+
+func (c *authControllerFacade) Register(ctx echo.Context) error { return c.user.Register(ctx) }
+func (c *authControllerFacade) Login(ctx echo.Context) error    { return c.user.Login(ctx) }
+func (c *authControllerFacade) Logout(ctx echo.Context) error   { return c.user.Logout(ctx) }
+func (c *authControllerFacade) GenerateConfirmToken(ctx echo.Context) error {
+	return c.user.GenerateConfirmToken(ctx)
+}
+func (c *authControllerFacade) RefreshToken(ctx echo.Context) error { return c.user.RefreshToken(ctx) }
+func (c *authControllerFacade) ValidateToken(ctx echo.Context) error {
+	return c.user.ValidateToken(ctx)
+}
+func (c *authControllerFacade) ChangePassword(ctx echo.Context) error {
+	return c.user.ChangePassword(ctx)
+}
+func (c *authControllerFacade) ConfirmAccount(ctx echo.Context) error {
+	return c.user.ConfirmAccount(ctx)
+}
+func (c *authControllerFacade) RequestPasswordReset(ctx echo.Context) error {
+	return c.user.RequestPasswordReset(ctx)
+}
+func (c *authControllerFacade) ResetPassword(ctx echo.Context) error {
+	return c.user.ResetPassword(ctx)
+}
+func (c *authControllerFacade) InternalAccess(ctx echo.Context) error {
+	return c.internal.InternalAccess(ctx)
+}
+
+func newControllerWithMock(t *testing.T) (*authControllerFacade, sqlmock.Sqlmock, func()) {
 	t.Helper()
 
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
@@ -86,9 +117,13 @@ func newControllerWithMock(t *testing.T) (*controller.AuthController, sqlmock.Sq
 	userRepo := repository.NewUserRepository(db)
 	refreshRepo := repository.NewRefreshTokenRepository(db)
 	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
-	authService := service.NewAuthService(db, userRepo, refreshRepo, internalAPIKeyRepo, cfg)
+	userAuthService := service.NewUserAuthService(db, userRepo, refreshRepo, cfg)
+	internalAuthService := service.NewInternalAuthService(internalAPIKeyRepo)
 
-	return controller.NewAuthController(authService), mock, func() { _ = db.Close() }
+	return &authControllerFacade{
+		user:     controller.NewUserAuthController(userAuthService),
+		internal: controller.NewInternalAuthController(internalAuthService),
+	}, mock, func() { _ = db.Close() }
 }
 
 func newJSONRequest(t *testing.T, method, path string, body any) (*http.Request, *httptest.ResponseRecorder) {
@@ -369,90 +404,6 @@ func TestLogout_MissingRefreshToken(t *testing.T) {
 	}
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
-	}
-}
-
-func TestInternalAccess_MissingBodyAPIKey(t *testing.T) {
-	controllerWithMock, _, cleanup := newControllerWithMock(t)
-	defer cleanup()
-
-	req, rec := newJSONRequest(t, http.MethodPost, "/auth/internal/access", map[string]string{})
-	e := echo.New()
-	ctx := e.NewContext(req, rec)
-
-	if err := controllerWithMock.InternalAccess(ctx); err != nil {
-		t.Fatalf("handler error: %v", err)
-	}
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", rec.Code)
-	}
-}
-
-func TestInternalAccess_InvalidAPIKey(t *testing.T) {
-	controllerWithMock, mock, cleanup := newControllerWithMock(t)
-	defer cleanup()
-
-	req, rec := newJSONRequest(t, http.MethodPost, "/auth/internal/access", map[string]string{
-		"api_key": "invalid-key",
-	})
-	e := echo.New()
-	ctx := e.NewContext(req, rec)
-
-	mock.ExpectQuery(findInternalByHashQuery).
-		WithArgs(sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns))
-
-	if err := controllerWithMock.InternalAccess(ctx); err != nil {
-		t.Fatalf("handler error: %v", err)
-	}
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected status 404, got %d", rec.Code)
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
-	}
-}
-
-func TestInternalAccess_Success(t *testing.T) {
-	controllerWithMock, mock, cleanup := newControllerWithMock(t)
-	defer cleanup()
-
-	now := time.Now()
-	req, rec := newJSONRequest(t, http.MethodPost, "/auth/internal/access", map[string]string{
-		"api_key": "valid-key",
-	})
-	e := echo.New()
-	ctx := e.NewContext(req, rec)
-
-	mock.ExpectQuery(findInternalByHashQuery).
-		WithArgs(sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows(internalAPIKeyColumns).AddRow(
-			uint64(1),
-			"profile-service",
-			"hash",
-			`["notifications","auth"]`,
-			true,
-			now.Add(time.Hour),
-			now,
-			now,
-		))
-
-	if err := controllerWithMock.InternalAccess(ctx); err != nil {
-		t.Fatalf("handler error: %v", err)
-	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d body: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"service_name":"profile-service"`) {
-		t.Fatalf("expected service_name in response, got %s", rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"allowed_access":["notifications","auth"]`) {
-		t.Fatalf("expected allowed_access in response, got %s", rec.Body.String())
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
 	}
 }
 

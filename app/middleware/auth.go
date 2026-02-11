@@ -10,11 +10,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type AuthMiddleware struct {
-	authService *service.AuthService
+type accessTokenValidator interface {
+	ValidateAccessToken(tokenString string) (*service.Claims, error)
 }
 
-func NewAuthMiddleware(authService *service.AuthService) *AuthMiddleware {
+type AuthMiddleware struct {
+	authService accessTokenValidator
+}
+
+func NewAuthMiddleware(authService accessTokenValidator) *AuthMiddleware {
 	return &AuthMiddleware{authService: authService}
 }
 
