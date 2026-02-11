@@ -104,6 +104,8 @@ func TestLoadRequiresMySQLDSN(t *testing.T) {
 func TestLoadSuccess(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret")
 	t.Setenv("MYSQL_DSN", "user:pass@tcp(db:3306)/authdb?parseTime=true")
+	t.Setenv("APP_SERVICE_NAME", "auth-service")
+	t.Setenv("APP_API_KEY", "auth-app-key")
 	t.Setenv("HTTP_HOST", "127.0.0.1")
 	t.Setenv("HTTP_PORT", "8081")
 	t.Setenv("GRPC_HOST", "127.0.0.1")
@@ -122,34 +124,33 @@ func TestLoadSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load failed: %v", err)
 	}
-	if cfg.HTTPHost != "127.0.0.1" || cfg.HTTPPort != "8081" || cfg.GRPCHost != "127.0.0.1" || cfg.GRPCPort != "9091" {
-		t.Fatalf("unexpected host/port: %s:%s %s:%s", cfg.HTTPHost, cfg.HTTPPort, cfg.GRPCHost, cfg.GRPCPort)
+	if cfg.HTTP.Host != "127.0.0.1" || cfg.HTTP.Port != "8081" || cfg.GRPC.Host != "127.0.0.1" || cfg.GRPC.Port != "9091" {
+		t.Fatalf("unexpected host/port: %s:%s %s:%s", cfg.HTTP.Host, cfg.HTTP.Port, cfg.GRPC.Host, cfg.GRPC.Port)
 	}
-	if cfg.MySQLDSN != "user:pass@tcp(db:3306)/authdb?parseTime=true" {
-		t.Fatalf("unexpected mysql dsn: %s", cfg.MySQLDSN)
+	if cfg.MySQL.DSN != "user:pass@tcp(db:3306)/authdb?parseTime=true" {
+		t.Fatalf("unexpected mysql dsn: %s", cfg.MySQL.DSN)
 	}
-	if cfg.JWTAccessTokenTTL != 20*time.Minute || cfg.JWTRefreshTokenTTL != 60*time.Minute {
-		t.Fatalf("unexpected jwt ttl: %v %v", cfg.JWTAccessTokenTTL, cfg.JWTRefreshTokenTTL)
+	if cfg.JWT.AccessTokenTTL != 20*time.Minute || cfg.JWT.RefreshTokenTTL != 60*time.Minute {
+		t.Fatalf("unexpected jwt ttl: %v %v", cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	}
-	if cfg.ConfirmTokenTTL != 120*time.Minute || cfg.ResetTokenTTL != 30*time.Minute {
-		t.Fatalf("unexpected token ttl: %v %v", cfg.ConfirmTokenTTL, cfg.ResetTokenTTL)
+	if cfg.Tokens.ConfirmTTL != 120*time.Minute || cfg.Tokens.ResetTTL != 30*time.Minute {
+		t.Fatalf("unexpected token ttl: %v %v", cfg.Tokens.ConfirmTTL, cfg.Tokens.ResetTTL)
 	}
-	if cfg.PasswordPolicy.MinLength != 10 ||
-		cfg.PasswordPolicy.RequireUppercase != false ||
-		cfg.PasswordPolicy.RequireLowercase != true ||
-		cfg.PasswordPolicy.RequireNumber != false ||
-		cfg.PasswordPolicy.RequireSpecial != false {
-		t.Fatalf("unexpected password policy: %+v", cfg.PasswordPolicy)
+	if cfg.Password.Policy.MinLength != 10 ||
+		cfg.Password.Policy.RequireUppercase != false ||
+		cfg.Password.Policy.RequireLowercase != true ||
+		cfg.Password.Policy.RequireNumber != false ||
+		cfg.Password.Policy.RequireSpecial != false {
+		t.Fatalf("unexpected password policy: %+v", cfg.Password.Policy)
 	}
-}
-
-func TestDSN(t *testing.T) {
-	cfg := &Config{
-		MySQLDSN: "user:pass@tcp(localhost:3306)/auth?parseTime=true",
+	if cfg.App.ServiceName != "auth-service" || cfg.App.APIKey != "auth-app-key" {
+		t.Fatalf("unexpected app config: %+v", cfg.App)
 	}
-	got := cfg.DSN()
-	if got != cfg.MySQLDSN {
-		t.Fatalf("expected %q, got %q", cfg.MySQLDSN, got)
+	if cfg.JWT.Secret != "secret" {
+		t.Fatalf("unexpected JWT secret: %s", cfg.JWT.Secret)
+	}
+	if cfg.Log.Level != "info" {
+		t.Fatalf("unexpected log level: %s", cfg.Log.Level)
 	}
 }
 
@@ -160,8 +161,11 @@ func TestLoadUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load failed: %v", err)
 	}
-	if cfg.HTTPPort == "" || cfg.GRPCPort == "" || cfg.MySQLDSN == "" {
+	if cfg.HTTP.Port == "" || cfg.GRPC.Port == "" || cfg.MySQL.DSN == "" {
 		t.Fatalf("expected defaults to be populated")
+	}
+	if cfg.App.ServiceName == "" {
+		t.Fatalf("expected APP_SERVICE_NAME default to be populated")
 	}
 }
 
@@ -187,7 +191,7 @@ func TestLoadRespectsEnvFileLocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load failed: %v", err)
 	}
-	if cfg.JWTSecret != "envfile-secret" || cfg.HTTPPort != "9099" {
-		t.Fatalf("expected env file values, got %s %s", cfg.JWTSecret, cfg.HTTPPort)
+	if cfg.JWT.Secret != "envfile-secret" || cfg.HTTP.Port != "9099" {
+		t.Fatalf("expected env file values, got %s %s", cfg.JWT.Secret, cfg.HTTP.Port)
 	}
 }

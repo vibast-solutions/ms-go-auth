@@ -109,7 +109,7 @@ func (s *userAuthService) Register(ctx context.Context, req *types.RegisterReque
 		return nil, ErrUserExists
 	}
 
-	if err = s.cfg.PasswordPolicy.Validate(req.GetPassword()); err != nil {
+	if err = s.cfg.Password.Policy.Validate(req.GetPassword()); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrWeakPassword, err.Error())
 	}
 
@@ -128,7 +128,7 @@ func (s *userAuthService) Register(ctx context.Context, req *types.RegisterReque
 		IsConfirmed:    false,
 		ConfirmToken:   sql.NullString{String: confirmToken, Valid: true},
 		ConfirmTokenExpiresAt: sql.NullTime{
-			Time:  now.Add(s.cfg.ConfirmTokenTTL),
+			Time:  now.Add(s.cfg.Tokens.ConfirmTTL),
 			Valid: true,
 		},
 		CreatedAt: now,
@@ -196,7 +196,7 @@ func (s *userAuthService) Login(ctx context.Context, req *types.LoginRequest) (*
 		return nil, err
 	}
 
-	effectiveTTL := s.cfg.JWTAccessTokenTTL
+	effectiveTTL := s.cfg.JWT.AccessTokenTTL
 	if customTTL > 0 {
 		effectiveTTL = customTTL
 	}
@@ -227,7 +227,7 @@ func (s *userAuthService) ChangePassword(ctx context.Context, userID uint64, req
 		return ErrPasswordMismatch
 	}
 
-	if err = s.cfg.PasswordPolicy.Validate(req.GetNewPassword()); err != nil {
+	if err = s.cfg.Password.Policy.Validate(req.GetNewPassword()); err != nil {
 		return fmt.Errorf("%w: %s", ErrWeakPassword, err.Error())
 	}
 
@@ -288,7 +288,7 @@ func (s *userAuthService) GenerateConfirmToken(ctx context.Context, req *types.G
 	confirmToken := uuid.New().String()
 	user.ConfirmToken = sql.NullString{String: confirmToken, Valid: true}
 	user.ConfirmTokenExpiresAt = sql.NullTime{
-		Time:  time.Now().Add(s.cfg.ConfirmTokenTTL),
+		Time:  time.Now().Add(s.cfg.Tokens.ConfirmTTL),
 		Valid: true,
 	}
 
@@ -322,7 +322,7 @@ func (s *userAuthService) RequestPasswordReset(ctx context.Context, req *types.R
 	resetToken := uuid.New().String()
 	user.ResetToken = sql.NullString{String: resetToken, Valid: true}
 	user.ResetTokenExpiresAt = sql.NullTime{
-		Time:  time.Now().Add(s.cfg.ResetTokenTTL),
+		Time:  time.Now().Add(s.cfg.Tokens.ResetTTL),
 		Valid: true,
 	}
 
@@ -349,7 +349,7 @@ func (s *userAuthService) ResetPassword(ctx context.Context, req *types.ResetPas
 		return ErrTokenExpired
 	}
 
-	if err = s.cfg.PasswordPolicy.Validate(req.GetNewPassword()); err != nil {
+	if err = s.cfg.Password.Policy.Validate(req.GetNewPassword()); err != nil {
 		return fmt.Errorf("%w: %s", ErrWeakPassword, err.Error())
 	}
 
@@ -424,7 +424,7 @@ func (s *userAuthService) RefreshToken(ctx context.Context, req *types.RefreshTo
 	return &types.RefreshTokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
-		ExpiresIn:    int64(s.cfg.JWTAccessTokenTTL.Seconds()),
+		ExpiresIn:    int64(s.cfg.JWT.AccessTokenTTL.Seconds()),
 		Roles:        user.Roles,
 	}, nil
 }
@@ -434,7 +434,7 @@ func (s *userAuthService) ValidateAccessToken(tokenString string) (*Claims, erro
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(s.cfg.JWTSecret), nil
+		return []byte(s.cfg.JWT.Secret), nil
 	})
 	if err != nil {
 		return nil, ErrInvalidToken
@@ -450,7 +450,7 @@ func (s *userAuthService) ValidateAccessToken(tokenString string) (*Claims, erro
 
 func (s *userAuthService) generateAccessToken(user *entity.User, ttl time.Duration) (string, error) {
 	if ttl <= 0 {
-		ttl = s.cfg.JWTAccessTokenTTL
+		ttl = s.cfg.JWT.AccessTokenTTL
 	}
 
 	claims := &Claims{
@@ -465,7 +465,7 @@ func (s *userAuthService) generateAccessToken(user *entity.User, ttl time.Durati
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.cfg.JWTSecret))
+	return token.SignedString([]byte(s.cfg.JWT.Secret))
 }
 
 func (s *userAuthService) generateRefreshToken(ctx context.Context, user *entity.User) (string, error) {
@@ -479,7 +479,7 @@ func (s *userAuthService) generateRefreshTokenWithRepo(ctx context.Context, repo
 	refreshToken := &entity.RefreshToken{
 		UserID:    user.ID,
 		Token:     tokenString,
-		ExpiresAt: now.Add(s.cfg.JWTRefreshTokenTTL),
+		ExpiresAt: now.Add(s.cfg.JWT.RefreshTokenTTL),
 		CreatedAt: now,
 	}
 

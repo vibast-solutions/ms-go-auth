@@ -40,7 +40,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		logrus.WithError(err).Fatal("Failed to configure logging")
 	}
 
-	db, err := sql.Open("mysql", cfg.DSN())
+	db, err := sql.Open("mysql", cfg.MySQL.DSN)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to connect to database")
 	}
@@ -120,7 +120,7 @@ func startHTTPServer(cfg *config.Config, userAuthService service.UserAuthService
 	authProtected.POST("/logout", userAuthController.Logout)
 	authProtected.POST("/change-password", userAuthController.ChangePassword)
 
-	httpAddr := net.JoinHostPort(cfg.HTTPHost, cfg.HTTPPort)
+	httpAddr := net.JoinHostPort(cfg.HTTP.Host, cfg.HTTP.Port)
 	logrus.WithField("addr", httpAddr).Info("Starting HTTP server")
 	if err := e.Start(httpAddr); err != nil {
 		logrus.WithError(err).Fatal("Failed to start HTTP server")
@@ -128,7 +128,7 @@ func startHTTPServer(cfg *config.Config, userAuthService service.UserAuthService
 }
 
 func startGRPCServer(cfg *config.Config, userAuthService service.UserAuthService, internalAuthService service.InternalAuthService) {
-	grpcAddr := net.JoinHostPort(cfg.GRPCHost, cfg.GRPCPort)
+	grpcAddr := net.JoinHostPort(cfg.GRPC.Host, cfg.GRPC.Port)
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to listen on gRPC port")

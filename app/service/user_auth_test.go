@@ -229,12 +229,18 @@ func newServiceWithMockAndPolicy(t *testing.T, policy config.PasswordPolicy) (*t
 	}
 
 	cfg := &config.Config{
-		JWTSecret:          "test-secret",
-		JWTAccessTokenTTL:  15 * time.Minute,
-		JWTRefreshTokenTTL: 7 * 24 * time.Hour,
-		ConfirmTokenTTL:    24 * time.Hour,
-		ResetTokenTTL:      time.Hour,
-		PasswordPolicy:     policy,
+		JWT: config.JWTConfig{
+			Secret:          "test-secret",
+			AccessTokenTTL:  15 * time.Minute,
+			RefreshTokenTTL: 7 * 24 * time.Hour,
+		},
+		Tokens: config.TokenConfig{
+			ConfirmTTL: 24 * time.Hour,
+			ResetTTL:   time.Hour,
+		},
+		Password: config.PasswordConfig{
+			Policy: policy,
+		},
 	}
 
 	userRepo := repository.NewUserRepository(db)

@@ -13,18 +13,47 @@ import (
 )
 
 type Config struct {
-	HTTPHost           string
-	HTTPPort           string
-	GRPCHost           string
-	GRPCPort           string
-	MySQLDSN           string
-	JWTSecret          string
-	JWTAccessTokenTTL  time.Duration
-	JWTRefreshTokenTTL time.Duration
-	ConfirmTokenTTL    time.Duration
-	ResetTokenTTL      time.Duration
-	PasswordPolicy     PasswordPolicy
-	LogLevel           string
+	App      AppConfig
+	HTTP     ServerConfig
+	GRPC     ServerConfig
+	MySQL    MySQLConfig
+	JWT      JWTConfig
+	Tokens   TokenConfig
+	Password PasswordConfig
+	Log      LogConfig
+}
+
+type AppConfig struct {
+	ServiceName string
+	APIKey      string
+}
+
+type ServerConfig struct {
+	Host string
+	Port string
+}
+
+type MySQLConfig struct {
+	DSN string
+}
+
+type JWTConfig struct {
+	Secret          string
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
+}
+
+type TokenConfig struct {
+	ConfirmTTL time.Duration
+	ResetTTL   time.Duration
+}
+
+type PasswordConfig struct {
+	Policy PasswordPolicy
+}
+
+type LogConfig struct {
+	Level string
 }
 
 type PasswordPolicy struct {
@@ -90,23 +119,37 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		HTTPHost:           getEnv("HTTP_HOST", "0.0.0.0"),
-		HTTPPort:           getEnv("HTTP_PORT", "8080"),
-		GRPCHost:           getEnv("GRPC_HOST", "0.0.0.0"),
-		GRPCPort:           getEnv("GRPC_PORT", "9090"),
-		MySQLDSN:           mysqlDSN,
-		JWTSecret:          jwtSecret,
-		JWTAccessTokenTTL:  getDurationEnv("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
-		JWTRefreshTokenTTL: getDurationEnv("JWT_REFRESH_TOKEN_TTL", 7*24*time.Hour),
-		ConfirmTokenTTL:    getDurationEnv("CONFIRM_TOKEN_TTL", 24*time.Hour),
-		ResetTokenTTL:      getDurationEnv("RESET_TOKEN_TTL", 1*time.Hour),
-		PasswordPolicy:     loadPasswordPolicy(),
-		LogLevel:           getEnv("LOG_LEVEL", "info"),
+		App: AppConfig{
+			ServiceName: getEnv("APP_SERVICE_NAME", "auth-service"),
+			APIKey:      getEnv("APP_API_KEY", ""),
+		},
+		HTTP: ServerConfig{
+			Host: getEnv("HTTP_HOST", "0.0.0.0"),
+			Port: getEnv("HTTP_PORT", "8080"),
+		},
+		GRPC: ServerConfig{
+			Host: getEnv("GRPC_HOST", "0.0.0.0"),
+			Port: getEnv("GRPC_PORT", "9090"),
+		},
+		MySQL: MySQLConfig{
+			DSN: mysqlDSN,
+		},
+		JWT: JWTConfig{
+			Secret:          jwtSecret,
+			AccessTokenTTL:  getDurationEnv("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
+			RefreshTokenTTL: getDurationEnv("JWT_REFRESH_TOKEN_TTL", 7*24*time.Hour),
+		},
+		Tokens: TokenConfig{
+			ConfirmTTL: getDurationEnv("CONFIRM_TOKEN_TTL", 24*time.Hour),
+			ResetTTL:   getDurationEnv("RESET_TOKEN_TTL", 1*time.Hour),
+		},
+		Password: PasswordConfig{
+			Policy: loadPasswordPolicy(),
+		},
+		Log: LogConfig{
+			Level: getEnv("LOG_LEVEL", "info"),
+		},
 	}, nil
-}
-
-func (c *Config) DSN() string {
-	return c.MySQLDSN
 }
 
 func getEnv(key, defaultValue string) string {
