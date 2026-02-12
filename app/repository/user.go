@@ -22,10 +22,6 @@ func NewUserRepository(db DBTX) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-func (r *UserRepository) WithTx(tx *sql.Tx) *UserRepository {
-	return &UserRepository{db: tx}
-}
-
 func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 	query := `
 		INSERT INTO users (email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at)
@@ -245,10 +241,6 @@ type RefreshTokenRepository struct {
 
 func NewRefreshTokenRepository(db DBTX) *RefreshTokenRepository {
 	return &RefreshTokenRepository{db: db}
-}
-
-func (r *RefreshTokenRepository) WithTx(tx *sql.Tx) *RefreshTokenRepository {
-	return &RefreshTokenRepository{db: tx}
 }
 
 func (r *RefreshTokenRepository) Create(ctx context.Context, token *entity.RefreshToken) error {

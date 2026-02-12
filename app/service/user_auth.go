@@ -48,7 +48,6 @@ type userRepository interface {
 	FindByConfirmToken(ctx context.Context, token string) (*entity.User, error)
 	FindByResetToken(ctx context.Context, token string) (*entity.User, error)
 	Update(ctx context.Context, user *entity.User) error
-	WithTx(tx *sql.Tx) *repository.UserRepository
 }
 
 type refreshTokenRepository interface {
@@ -56,7 +55,6 @@ type refreshTokenRepository interface {
 	FindByTokenForUpdate(ctx context.Context, token string) (*entity.RefreshToken, error)
 	DeleteByToken(ctx context.Context, token string, userID uint64) (int64, error)
 	DeleteByUserID(ctx context.Context, userID uint64) error
-	WithTx(tx *sql.Tx) *repository.RefreshTokenRepository
 }
 
 type refreshTokenCreator interface {
@@ -141,7 +139,7 @@ func (s *userAuthService) Register(ctx context.Context, req *types.RegisterReque
 	}
 	defer tx.Rollback()
 
-	txUserRepo := s.userRepo.WithTx(tx)
+	txUserRepo := repository.NewUserRepository(tx)
 	if err = txUserRepo.Create(ctx, user); err != nil {
 		return nil, err
 	}
@@ -376,7 +374,7 @@ func (s *userAuthService) RefreshToken(ctx context.Context, req *types.RefreshTo
 	}
 	defer tx.Rollback()
 
-	txRefreshRepo := s.refreshTokenRepo.WithTx(tx)
+	txRefreshRepo := repository.NewRefreshTokenRepository(tx)
 
 	token, err := txRefreshRepo.FindByTokenForUpdate(ctx, req.GetRefreshToken())
 	if err != nil {
@@ -390,7 +388,7 @@ func (s *userAuthService) RefreshToken(ctx context.Context, req *types.RefreshTo
 		return nil, ErrTokenExpired
 	}
 
-	txUserRepo := s.userRepo.WithTx(tx)
+	txUserRepo := repository.NewUserRepository(tx)
 	user, err := txUserRepo.FindByID(ctx, token.UserID)
 	if err != nil {
 		return nil, err

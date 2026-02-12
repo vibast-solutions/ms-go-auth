@@ -17,10 +17,6 @@ func NewInternalAPIKeyRepository(db DBTX) *InternalAPIKeyRepository {
 	return &InternalAPIKeyRepository{db: db}
 }
 
-func (r *InternalAPIKeyRepository) WithTx(tx DBTX) *InternalAPIKeyRepository {
-	return &InternalAPIKeyRepository{db: tx}
-}
-
 func (r *InternalAPIKeyRepository) Create(ctx context.Context, key *entity.InternalAPIKey) error {
 	allowedAccess, err := json.Marshal(key.AllowedAccess)
 	if err != nil {
