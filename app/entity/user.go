@@ -16,6 +16,7 @@ type User struct {
 	ConfirmTokenExpiresAt sql.NullTime
 	ResetToken            sql.NullString
 	ResetTokenExpiresAt   sql.NullTime
+	LastLogin             sql.NullTime
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }

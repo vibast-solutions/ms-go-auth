@@ -14,6 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -48,6 +49,7 @@ type userRepository interface {
 	FindByConfirmToken(ctx context.Context, token string) (*entity.User, error)
 	FindByResetToken(ctx context.Context, token string) (*entity.User, error)
 	Update(ctx context.Context, user *entity.User) error
+	UpdateLastLogin(ctx context.Context, userID uint64, lastLogin time.Time) error
 }
 
 type refreshTokenRepository interface {
@@ -74,11 +76,16 @@ type UserAuthService interface {
 	ValidateAccessToken(tokenString string) (*Claims, error)
 }
 
+type AsyncRunner func(task func())
+
+type UserAuthServiceOption func(*userAuthService)
+
 type userAuthService struct {
 	db               *sql.DB
 	userRepo         userRepository
 	refreshTokenRepo refreshTokenRepository
 	cfg              *config.Config
+	asyncRunner      AsyncRunner
 }
 
 func NewUserAuthService(
@@ -86,12 +93,28 @@ func NewUserAuthService(
 	userRepo userRepository,
 	refreshTokenRepo refreshTokenRepository,
 	cfg *config.Config,
+	opts ...UserAuthServiceOption,
 ) UserAuthService {
-	return &userAuthService{
+	svc := &userAuthService{
 		db:               db,
 		userRepo:         userRepo,
 		refreshTokenRepo: refreshTokenRepo,
 		cfg:              cfg,
+		asyncRunner: func(task func()) {
+			go task()
+		},
+	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
+}
+
+func WithAsyncRunner(runner AsyncRunner) UserAuthServiceOption {
+	return func(s *userAuthService) {
+		if runner != nil {
+			s.asyncRunner = runner
+		}
 	}
 }
 
@@ -178,6 +201,15 @@ func (s *userAuthService) Login(ctx context.Context, req *types.LoginRequest) (*
 	if !user.IsConfirmed {
 		return nil, ErrAccountNotConfirmed
 	}
+
+	s.asyncRunner(func() {
+		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if updateErr := s.userRepo.UpdateLastLogin(updateCtx, user.ID, time.Now()); updateErr != nil {
+			logrus.WithError(updateErr).WithField("user_id", user.ID).Error("failed to update last_login")
+		}
+	})
 
 	customTTL := time.Duration(0)
 	if req.GetTokenDuration() > 0 {

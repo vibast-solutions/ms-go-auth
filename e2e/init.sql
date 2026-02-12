@@ -11,6 +11,7 @@ CREATE TABLE users (
     confirm_token_expires_at DATETIME NULL,
     reset_token VARCHAR(255) NULL,
     reset_token_expires_at DATETIME NULL,
+    last_login DATETIME NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     UNIQUE INDEX idx_users_email (email),

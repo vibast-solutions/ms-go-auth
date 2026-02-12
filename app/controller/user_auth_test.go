@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
-	findByIDQuery             = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE id = \?`
+	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
+	findByIDQuery             = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE id = \?`
 	findRefreshTokenForUpdate = `(?s)SELECT id, user_id, token, expires_at, created_at\s+FROM refresh_tokens WHERE token = \? FOR UPDATE`
-	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
+	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, last_login, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?, \?\)`
 	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
 	listUserRolesQuery        = `(?s)SELECT role FROM user_roles WHERE user_id = \? ORDER BY role`
 	findInternalByHashQuery   = `(?s)SELECT id, service_name, key_hash, allowed_access_json, is_active, expires_at, created_at, updated_at\s+FROM internal_api_keys\s+WHERE key_hash = \? AND is_active = 1 AND expires_at > NOW\(\)\s+ORDER BY id DESC\s+LIMIT 1`
@@ -41,6 +41,7 @@ var userColumns = []string{
 	"confirm_token_expires_at",
 	"reset_token",
 	"reset_token_expires_at",
+	"last_login",
 	"created_at",
 	"updated_at",
 }
@@ -168,7 +169,7 @@ func TestRegister_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(userColumns))
 	mock.ExpectBegin()
 	mock.ExpectExec(insertUserQuery).
-		WithArgs(email, canonical, sqlmock.AnyArg(), false, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WithArgs(email, canonical, sqlmock.AnyArg(), false, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(insertUserRoleQuery).
 		WithArgs(uint64(1), service.RoleUser).
@@ -321,6 +322,7 @@ func TestChangePassword_Mismatch(t *testing.T) {
 			sql.NullTime{Valid: false},
 			sql.NullString{Valid: false},
 			sql.NullTime{Valid: false},
+			sql.NullTime{Valid: false},
 			now,
 			now,
 		))
@@ -464,7 +466,7 @@ func TestConfirmAccount_InvalidToken(t *testing.T) {
 	controllerWithMock, mock, cleanup := newControllerWithMock(t)
 	defer cleanup()
 
-	mock.ExpectQuery(`(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE confirm_token = \?`).
+	mock.ExpectQuery(`(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE confirm_token = \?`).
 		WithArgs("bad-token").
 		WillReturnRows(sqlmock.NewRows(userColumns))
 
@@ -564,7 +566,7 @@ func TestResetPassword_ExpiredToken(t *testing.T) {
 	defer cleanup()
 
 	now := time.Now()
-	mock.ExpectQuery(`(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE reset_token = \?`).
+	mock.ExpectQuery(`(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE reset_token = \?`).
 		WithArgs("expired-token").
 		WillReturnRows(sqlmock.NewRows(userColumns).AddRow(
 			uint64(1),
@@ -576,6 +578,7 @@ func TestResetPassword_ExpiredToken(t *testing.T) {
 			sql.NullTime{Valid: false},
 			sql.NullString{String: "expired-token", Valid: true},
 			sql.NullTime{Time: now.Add(-time.Hour), Valid: true},
+			sql.NullTime{Valid: false},
 			now,
 			now,
 		))
@@ -653,6 +656,7 @@ func TestRegister_DuplicateUser(t *testing.T) {
 			sql.NullString{Valid: false},
 			sql.NullTime{Valid: false},
 			sql.NullString{Valid: false},
+			sql.NullTime{Valid: false},
 			sql.NullTime{Valid: false},
 			now,
 			now,

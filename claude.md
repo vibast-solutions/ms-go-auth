@@ -52,7 +52,7 @@ auth/
 
 ## Database Schema
 Three tables in MySQL database `auth`:
-- `users`: id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, reset_token, reset_token_expires_at, created_at, updated_at
+- `users`: id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, reset_token, reset_token_expires_at, last_login, created_at, updated_at
 - `refresh_tokens`: id, user_id (FK), token, expires_at, created_at
 - `user_roles`: user_id (FK), role (composite PK with user_id)
 

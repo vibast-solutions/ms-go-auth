@@ -14,13 +14,14 @@ import (
 )
 
 const (
-	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
+	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, last_login, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?, \?\)`
 	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
-	updateUserQuery           = `(?s)UPDATE users SET\s+email = \?,\s+canonical_email = \?,\s+password_hash = \?,\s+is_confirmed = \?,\s+confirm_token = \?,\s+confirm_token_expires_at = \?,\s+reset_token = \?,\s+reset_token_expires_at = \?,\s+updated_at = \?\s+WHERE id = \?`
-	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
+	updateUserQuery           = `(?s)UPDATE users SET\s+email = \?,\s+canonical_email = \?,\s+password_hash = \?,\s+is_confirmed = \?,\s+confirm_token = \?,\s+confirm_token_expires_at = \?,\s+reset_token = \?,\s+reset_token_expires_at = \?,\s+last_login = \?,\s+updated_at = \?\s+WHERE id = \?`
+	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
 	listUserRolesQuery        = `(?s)SELECT role FROM user_roles WHERE user_id = \? ORDER BY role`
 	findRefreshTokenForUpdate = `(?s)SELECT id, user_id, token, expires_at, created_at\s+FROM refresh_tokens WHERE token = \? FOR UPDATE`
 	deleteRefreshTokenQuery   = `(?s)DELETE FROM refresh_tokens WHERE token = \? AND user_id = \?`
+	updateLastLoginQuery      = `(?s)UPDATE users\s+SET last_login = \?, updated_at = \?\s+WHERE id = \?`
 )
 
 var userColumns = []string{
@@ -33,6 +34,7 @@ var userColumns = []string{
 	"confirm_token_expires_at",
 	"reset_token",
 	"reset_token_expires_at",
+	"last_login",
 	"created_at",
 	"updated_at",
 }
@@ -87,6 +89,7 @@ func TestUserRepository_Create(t *testing.T) {
 			user.IsConfirmed,
 			user.ConfirmToken,
 			user.ConfirmTokenExpiresAt,
+			user.LastLogin,
 			user.CreatedAt,
 			user.UpdatedAt,
 		).
@@ -122,6 +125,7 @@ func TestUserRepository_FindByCanonicalEmail(t *testing.T) {
 			sql.NullString{Valid: false},
 			sql.NullTime{Valid: false},
 			sql.NullString{Valid: false},
+			sql.NullTime{Valid: false},
 			sql.NullTime{Valid: false},
 			now,
 			now,
@@ -169,6 +173,7 @@ func TestUserRepository_Update(t *testing.T) {
 			user.ConfirmTokenExpiresAt,
 			user.ResetToken,
 			user.ResetTokenExpiresAt,
+			user.LastLogin,
 			sqlmock.AnyArg(),
 			user.ID,
 		).
@@ -176,6 +181,25 @@ func TestUserRepository_Update(t *testing.T) {
 
 	if err := repo.Update(context.Background(), user); err != nil {
 		t.Fatalf("update failed: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestUserRepository_UpdateLastLogin(t *testing.T) {
+	db, mock, cleanup := newMockDB(t)
+	defer cleanup()
+
+	repo := repository.NewUserRepository(db)
+
+	mock.ExpectExec(updateLastLoginQuery).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := repo.UpdateLastLogin(context.Background(), 1, time.Now()); err != nil {
+		t.Fatalf("update last login failed: %v", err)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

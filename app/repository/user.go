@@ -24,8 +24,8 @@ func NewUserRepository(db DBTX) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 	query := `
-		INSERT INTO users (email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, last_login, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	result, err := r.db.ExecContext(ctx, query,
 		user.Email,
@@ -34,6 +34,7 @@ func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 		user.IsConfirmed,
 		user.ConfirmToken,
 		user.ConfirmTokenExpiresAt,
+		user.LastLogin,
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
@@ -52,7 +53,7 @@ func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 func (r *UserRepository) FindByCanonicalEmail(ctx context.Context, canonicalEmail string) (*entity.User, error) {
 	query := `
 		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
-		       reset_token, reset_token_expires_at, created_at, updated_at
+		       reset_token, reset_token_expires_at, last_login, created_at, updated_at
 		FROM users WHERE canonical_email = ?
 	`
 	user := &entity.User{}
@@ -66,6 +67,7 @@ func (r *UserRepository) FindByCanonicalEmail(ctx context.Context, canonicalEmai
 		&user.ConfirmTokenExpiresAt,
 		&user.ResetToken,
 		&user.ResetTokenExpiresAt,
+		&user.LastLogin,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -86,7 +88,7 @@ func (r *UserRepository) FindByCanonicalEmail(ctx context.Context, canonicalEmai
 func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User, error) {
 	query := `
 		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
-		       reset_token, reset_token_expires_at, created_at, updated_at
+		       reset_token, reset_token_expires_at, last_login, created_at, updated_at
 		FROM users WHERE id = ?
 	`
 	user := &entity.User{}
@@ -100,6 +102,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User,
 		&user.ConfirmTokenExpiresAt,
 		&user.ResetToken,
 		&user.ResetTokenExpiresAt,
+		&user.LastLogin,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -150,7 +153,7 @@ func (r *UserRepository) ListRolesByUserID(ctx context.Context, userID uint64) (
 func (r *UserRepository) FindByConfirmToken(ctx context.Context, token string) (*entity.User, error) {
 	query := `
 		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
-		       reset_token, reset_token_expires_at, created_at, updated_at
+		       reset_token, reset_token_expires_at, last_login, created_at, updated_at
 		FROM users WHERE confirm_token = ?
 	`
 	user := &entity.User{}
@@ -164,6 +167,7 @@ func (r *UserRepository) FindByConfirmToken(ctx context.Context, token string) (
 		&user.ConfirmTokenExpiresAt,
 		&user.ResetToken,
 		&user.ResetTokenExpiresAt,
+		&user.LastLogin,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -179,7 +183,7 @@ func (r *UserRepository) FindByConfirmToken(ctx context.Context, token string) (
 func (r *UserRepository) FindByResetToken(ctx context.Context, token string) (*entity.User, error) {
 	query := `
 		SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,
-		       reset_token, reset_token_expires_at, created_at, updated_at
+		       reset_token, reset_token_expires_at, last_login, created_at, updated_at
 		FROM users WHERE reset_token = ?
 	`
 	user := &entity.User{}
@@ -193,6 +197,7 @@ func (r *UserRepository) FindByResetToken(ctx context.Context, token string) (*e
 		&user.ConfirmTokenExpiresAt,
 		&user.ResetToken,
 		&user.ResetTokenExpiresAt,
+		&user.LastLogin,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -216,6 +221,7 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 			confirm_token_expires_at = ?,
 			reset_token = ?,
 			reset_token_expires_at = ?,
+			last_login = ?,
 			updated_at = ?
 		WHERE id = ?
 	`
@@ -229,9 +235,20 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 		user.ConfirmTokenExpiresAt,
 		user.ResetToken,
 		user.ResetTokenExpiresAt,
+		user.LastLogin,
 		user.UpdatedAt,
 		user.ID,
 	)
+	return err
+}
+
+func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID uint64, lastLogin time.Time) error {
+	query := `
+		UPDATE users
+		SET last_login = ?, updated_at = ?
+		WHERE id = ?
+	`
+	_, err := r.db.ExecContext(ctx, query, lastLogin, time.Now(), userID)
 	return err
 }
 

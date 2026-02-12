@@ -33,6 +33,7 @@ var (
 		"confirm_token_expires_at",
 		"reset_token",
 		"reset_token_expires_at",
+		"last_login",
 		"created_at",
 		"updated_at",
 	}
@@ -59,14 +60,15 @@ var (
 )
 
 const (
-	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
-	findByIDQuery             = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE id = \?`
-	findByResetTokenQuery     = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, created_at, updated_at\s+FROM users WHERE reset_token = \?`
+	findByCanonicalEmailQuery = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE canonical_email = \?`
+	findByIDQuery             = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE id = \?`
+	findByResetTokenQuery     = `(?s)SELECT id, email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at,\s+reset_token, reset_token_expires_at, last_login, created_at, updated_at\s+FROM users WHERE reset_token = \?`
 	findRefreshTokenForUpdate = `(?s)SELECT id, user_id, token, expires_at, created_at\s+FROM refresh_tokens WHERE token = \? FOR UPDATE`
-	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
+	insertUserQuery           = `(?s)INSERT INTO users \(email, canonical_email, password_hash, is_confirmed, confirm_token, confirm_token_expires_at, last_login, created_at, updated_at\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?, \?\)`
 	insertUserRoleQuery       = `(?s)INSERT INTO user_roles \(user_id, role\) VALUES \(\?, \?\)`
 	listUserRolesQuery        = `(?s)SELECT role FROM user_roles WHERE user_id = \? ORDER BY role`
-	updateUserQuery           = `(?s)UPDATE users SET\s+email = \?,\s+canonical_email = \?,\s+password_hash = \?,\s+is_confirmed = \?,\s+confirm_token = \?,\s+confirm_token_expires_at = \?,\s+reset_token = \?,\s+reset_token_expires_at = \?,\s+updated_at = \?\s+WHERE id = \?`
+	updateUserQuery           = `(?s)UPDATE users SET\s+email = \?,\s+canonical_email = \?,\s+password_hash = \?,\s+is_confirmed = \?,\s+confirm_token = \?,\s+confirm_token_expires_at = \?,\s+reset_token = \?,\s+reset_token_expires_at = \?,\s+last_login = \?,\s+updated_at = \?\s+WHERE id = \?`
+	updateLastLoginQuery      = `(?s)UPDATE users\s+SET last_login = \?, updated_at = \?\s+WHERE id = \?`
 	insertRefreshTokenQuery   = `(?s)INSERT INTO refresh_tokens \(user_id, token, expires_at, created_at\)\s+VALUES \(\?, \?, \?, \?\)`
 	deleteRefreshTokenQuery   = `(?s)DELETE FROM refresh_tokens WHERE token = \? AND user_id = \?`
 	deleteByUserIDQuery       = `(?s)DELETE FROM refresh_tokens WHERE user_id = \?`
@@ -247,7 +249,15 @@ func newServiceWithMockAndPolicy(t *testing.T, policy config.PasswordPolicy) (*t
 	refreshRepo := repository.NewRefreshTokenRepository(db)
 	internalAPIKeyRepo := repository.NewInternalAPIKeyRepository(db)
 	svc := &testAuthService{
-		userAuthService:     service.NewUserAuthService(db, userRepo, refreshRepo, cfg),
+		userAuthService: service.NewUserAuthService(
+			db,
+			userRepo,
+			refreshRepo,
+			cfg,
+			service.WithAsyncRunner(func(task func()) {
+				task()
+			}),
+		),
 		internalAuthService: service.NewInternalAuthService(internalAPIKeyRepo),
 	}
 
@@ -282,7 +292,7 @@ func TestAuthService_Register_CreatesUser(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(userColumns))
 	mock.ExpectBegin()
 	mock.ExpectExec(insertUserQuery).
-		WithArgs(email, canonical, sqlmock.AnyArg(), false, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WithArgs(email, canonical, sqlmock.AnyArg(), false, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(insertUserRoleQuery).
 		WithArgs(uint64(1), service.RoleUser).
@@ -356,10 +366,14 @@ func TestAuthService_Login_ReturnsTokens(t *testing.T) {
 			sql.NullTime{Valid: false},
 			sql.NullString{Valid: false},
 			sql.NullTime{Valid: false},
+			sql.NullTime{Valid: false},
 			now,
 			now,
 		))
 	expectUserRolesQuery(mock, 1, service.RoleUser)
+	mock.ExpectExec(updateLastLoginQuery).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(insertRefreshTokenQuery).
 		WithArgs(uint64(1), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -376,6 +390,52 @@ func TestAuthService_Login_ReturnsTokens(t *testing.T) {
 	}
 	if len(res.Roles) != 1 || res.Roles[0] != service.RoleUser {
 		t.Fatalf("expected roles to contain %q, got %#v", service.RoleUser, res.Roles)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthService_Login_ContinuesWhenLastLoginUpdateFails(t *testing.T) {
+	svc, mock, cleanup := newServiceWithMock(t)
+	defer cleanup()
+
+	email := "user@example.com"
+	canonical := service.CanonicalizeEmail(email)
+	hashed, _ := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.DefaultCost)
+	now := time.Now()
+
+	mock.ExpectQuery(findByCanonicalEmailQuery).
+		WithArgs(canonical).
+		WillReturnRows(sqlmock.NewRows(userColumns).AddRow(
+			uint64(1),
+			email,
+			canonical,
+			string(hashed),
+			true,
+			sql.NullString{Valid: false},
+			sql.NullTime{Valid: false},
+			sql.NullString{Valid: false},
+			sql.NullTime{Valid: false},
+			sql.NullTime{Valid: false},
+			now,
+			now,
+		))
+	expectUserRolesQuery(mock, 1, service.RoleUser)
+	mock.ExpectExec(updateLastLoginQuery).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
+		WillReturnError(errors.New("update failed"))
+	mock.ExpectExec(insertRefreshTokenQuery).
+		WithArgs(uint64(1), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	res, err := svc.Login(context.Background(), email, "password", 0)
+	if err != nil {
+		t.Fatalf("login failed: %v", err)
+	}
+	if res.AccessToken == "" || res.RefreshToken == "" {
+		t.Fatalf("expected tokens to be set")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -414,6 +474,7 @@ func TestAuthService_RefreshToken_RotatesToken(t *testing.T) {
 			sql.NullString{Valid: false},
 			sql.NullTime{Valid: false},
 			sql.NullString{Valid: false},
+			sql.NullTime{Valid: false},
 			sql.NullTime{Valid: false},
 			now,
 			now,
@@ -494,12 +555,13 @@ func TestAuthService_ChangePassword_RevokesRefreshTokens(t *testing.T) {
 			sql.NullTime{Valid: false},
 			sql.NullString{Valid: false},
 			sql.NullTime{Valid: false},
+			sql.NullTime{Valid: false},
 			now,
 			now,
 		))
 	expectUserRolesQuery(mock, 1, service.RoleUser)
 	mock.ExpectExec(updateUserQuery).
-		WithArgs(email, canonical, sqlmock.AnyArg(), true, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
+		WithArgs(email, canonical, sqlmock.AnyArg(), true, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(deleteByUserIDQuery).
 		WithArgs(uint64(1)).
@@ -534,11 +596,12 @@ func TestAuthService_ResetPassword_RevokesRefreshTokens(t *testing.T) {
 			sql.NullTime{Valid: false},
 			sql.NullString{String: "reset-token", Valid: true},
 			sql.NullTime{Time: now.Add(time.Hour), Valid: true},
+			sql.NullTime{Valid: false},
 			now,
 			now,
 		))
 	mock.ExpectExec(updateUserQuery).
-		WithArgs(email, canonical, sqlmock.AnyArg(), true, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
+		WithArgs(email, canonical, sqlmock.AnyArg(), true, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(deleteByUserIDQuery).
 		WithArgs(uint64(1)).
@@ -573,6 +636,7 @@ func TestAuthService_RequestPasswordReset_ReusesValidToken(t *testing.T) {
 			sql.NullTime{Valid: false},
 			sql.NullString{String: "reset-token", Valid: true},
 			sql.NullTime{Time: now.Add(time.Hour), Valid: true},
+			sql.NullTime{Valid: false},
 			now,
 			now,
 		))
